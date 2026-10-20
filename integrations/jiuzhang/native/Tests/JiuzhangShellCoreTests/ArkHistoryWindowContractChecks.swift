@@ -422,6 +422,122 @@ func runArkHistoryWindowContractChecks() async {
       check(complete.text.utf8.count == 3 * 1_024 * 1_024, "evicted body remains completely reachable through its immutable locator")
     }
   } catch { check(false, "history window contract completes: \(error)") }
+  await runComposerAttachmentNoticeChecks()
+}
+
+@MainActor
+private func runComposerAttachmentNoticeChecks() async {
+  let manager = FileManager.default
+  for language in ["zh", "en"] {
+    for scenario in ["direct", "history", "edited", "added-image"] {
+      let loadHistory = scenario == "history"
+      let changedDraft = scenario == "edited" || scenario == "added-image"
+      let suite = "ark-attachment-notice-\(UUID().uuidString)"
+      let defaults = UserDefaults(suiteName: suite)!
+      defaults.set(language, forKey: "ark.native.language")
+      let root = manager.temporaryDirectory.appendingPathComponent(suite)
+      let documents = root.appendingPathComponent("documents")
+      let preserved = root.appendingPathComponent("preserved-documents")
+      let configuration = URLSessionConfiguration.ephemeral
+      configuration.protocolClasses = [HistoryWindowURLProtocol.self]
+      let transport = URLSession(configuration: configuration)
+      defer {
+        transport.invalidateAndCancel()
+        defaults.removePersistentDomain(forName: suite)
+        try? manager.removeItem(at: root)
+      }
+      do {
+        let store = ArkDocumentReferenceStore(rootURL: documents)
+        let attachment = try await store.importPastedText("synthetic attachment recovery body", name: "fixture.txt")
+        var document = ArkComposerDraftDocument(text: "synthetic unsent attachment draft")
+        if changedDraft {
+          document.prepareSubmission(mode: .queue, timeZone: "UTC", permissionPreset: "read-only")
+        }
+        let journal = try await store.persistComposerState(document: document, sessionID: "fixture",
+          images: [], documents: [attachment])
+        if changedDraft {
+          _ = try await store.persistInflightComposerSubmission(document: document, sessionID: "fixture",
+            images: [], documents: [attachment])
+        }
+        defaults.set(try JSONEncoder().encode(document), forKey: "ark.native.composer-document.fixture")
+        defaults.set(journal, forKey: "ark.native.composer-attachments.fixture")
+        func storedBytes() throws -> [String: Data] {
+          var rows: [String: Data] = [:]
+          for entry in try manager.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil) {
+            rows[entry.lastPathComponent] = try Data(contentsOf: entry)
+          }
+          return rows
+        }
+        let originalBytes = try storedBytes()
+        try manager.moveItem(at: documents, to: preserved)
+        let endpoint = URL(string: "http://ark-synthetic-root.invalid")!
+        let model = ArkAppModel(client: ArkAPIClient(baseURL: endpoint, apiToken: "synthetic", session: transport),
+          interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic", session: transport),
+          eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic"),
+          fallbackWikiRoot: root.appendingPathComponent("wiki"), documentStore: store, defaults: defaults)
+        model.selectedSessionID = "fixture"
+        let failureDeadline = Date().addingTimeInterval(2)
+        while !model.composerAttachmentRestoreFailed && Date() < failureDeadline {
+          try await Task.sleep(for: .milliseconds(5))
+        }
+        check(model.composerAttachmentRestoreFailed && model.composerErrorMessage?.isEmpty == false
+          && model.composerDisplayErrorMessage == model.composerErrorMessage && model.composer == document.text,
+          "missing attachment recovery preserves its draft and displays the concrete failure (\(language), \(scenario))")
+        if loadHistory {
+          HistoryWindowURLProtocol.fixture = HistoryWindowFixture(renderTurns: 2)
+          await model.refreshHistory(resetPaging: true)
+          check(model.historyLoadState == .loaded && model.composerErrorMessage == nil
+            && model.composerAttachmentRestoreFailed,
+            "a successful real history read clears its transient notice without resolving missing attachments (\(language))")
+          let recoveryWord = language == "en" ? "attachments" : "附件"
+          check(model.composerDisplayErrorMessage?.contains(recoveryWord) == true,
+            "successful history keeps the attachment recovery notice and actions reachable (\(language))")
+        }
+        let expectedText: String
+        if scenario == "edited" {
+          expectedText = document.text + " later unsent edit"
+          model.composerTextDidChange(expectedText, caret: expectedText.utf16.count, isComposing: false)
+          let recoveryWord = language == "en" ? "attachments" : "附件"
+          check(model.composerErrorMessage == nil && model.composerDisplayErrorMessage?.contains(recoveryWord) == true
+            && model.composer == expectedText && model.pendingDocuments.isEmpty
+            && !manager.fileExists(atPath: documents.path),
+            "editing cannot hide attachment recovery or persist a reduced payload (\(language))")
+        } else { expectedText = document.text }
+        if scenario == "added-image" { model.addPastedImage(data: Data([4, 5, 6]), mediaType: .png) }
+        let currentImages = model.pendingImages
+        try manager.moveItem(at: preserved, to: documents)
+        model.retryComposerAttachmentRestore()
+        let recoveredDeadline = Date().addingTimeInterval(2)
+        while model.pendingDocuments.isEmpty && model.composerErrorMessage == nil
+          && model.pendingImages.isEmpty && Date() < recoveredDeadline {
+          try await Task.sleep(for: .milliseconds(5))
+        }
+        if changedDraft {
+          check(model.composerAttachmentRestoreFailed && model.composer == expectedText
+            && model.pendingDocuments.isEmpty && model.pendingImages == currentImages
+            && model.composerDisplayErrorMessage?.isEmpty == false,
+            "explicit recovery preserves changed input and keeps unresolved attachments visible (\(language), \(scenario))")
+          let inflight = try await store.restoreInflightSubmissions(sessionID: "fixture")
+          check(inflight.count == 1 && inflight.first?.document == document
+            && inflight.first?.documents == [attachment],
+            "attachment recovery keeps the original uncertain payload and identity separate from later edits (\(language))")
+          let afterRecoveryBytes = try storedBytes()
+          check(afterRecoveryBytes == originalBytes,
+            "rejected recovery leaves original pending, inflight and attachment bytes untouched (\(language), \(scenario))")
+        } else {
+          check(!model.composerAttachmentRestoreFailed && model.pendingDocuments == [attachment]
+            && model.composer == expectedText && model.composerDisplayErrorMessage == nil,
+            "explicit recovery restores the exact attachment and dismisses its resolved notice (\(language), \(scenario))")
+        }
+        await model.shutdown()
+        if changedDraft {
+          let afterShutdownBytes = try storedBytes()
+          check(afterShutdownBytes == originalBytes,
+            "shutdown does not replace unresolved attachment payloads with later input (\(language), \(scenario))")
+        }
+      } catch { check(false, "attachment notice recovery \(language), \(scenario): \(error)") }
+    }
+  }
 }
 
 // The shared Markdown parent owns the 30-second process deadline. A main-actor

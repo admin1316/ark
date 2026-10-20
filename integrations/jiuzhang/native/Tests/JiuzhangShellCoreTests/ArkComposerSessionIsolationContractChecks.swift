@@ -311,6 +311,97 @@ func runArkComposerSessionIsolationContractChecks() async {
   model.discardFailedComposerAttachments()
   check(!model.composerAttachmentRestoreFailed && model.composer == "must not send reduced payload",
     "explicit failed attachment removal preserves the user's text")
+  await model.shutdown()
+  await runColdMigratedComposerReceiptChecks()
+}
+
+@MainActor
+private func runColdMigratedComposerReceiptChecks() async {
+  for route in ["command-error", "command-success", "prompt-success"] {
+    for newerHome in [false, true] {
+      let suite = "ark-cold-migrated-receipt-\(UUID().uuidString)"
+      let defaults = UserDefaults(suiteName: suite)!
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+      let config = URLSessionConfiguration.ephemeral
+      config.protocolClasses = [ComposerIsolationURLProtocol.self]
+      let transport = URLSession(configuration: config)
+      defer {
+        transport.invalidateAndCancel()
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+        ComposerIsolationURLProtocol.reset()
+      }
+      do {
+        let store = ArkDocumentReferenceStore(rootURL: root)
+        let command = route.hasPrefix("command")
+        var captured = ArkComposerDraftDocument(text: command ? "/record cold migrated receipt" : "cold migrated prompt receipt")
+        captured.prepareSubmission(mode: .queue, timeZone: "UTC")
+        let targetID = captured.submissionID!
+        let images = [ArkPromptImage(mediaType: .png, data: Data([21]), name: "synthetic.png")]
+        let targetJournal = try await store.persistComposerState(document: captured, sessionID: targetID,
+          images: images, documents: [])
+        var homeDocument = newerHome ? ArkComposerDraftDocument(text: "later independent home input") : captured
+        if newerHome { homeDocument.prepareSubmission(mode: .queue, timeZone: "UTC") }
+        let homeImages = newerHome ? [ArkPromptImage(mediaType: .png, data: Data([22]), name: "later.png")] : images
+        let homeJournal = try await store.persistComposerState(document: homeDocument, sessionID: nil,
+          images: homeImages, documents: [])
+        defaults.set(try JSONEncoder().encode(captured), forKey: "ark.native.composer-document.\(targetID)")
+        defaults.set(targetJournal, forKey: "ark.native.composer-attachments.\(targetID)")
+        defaults.set(try JSONEncoder().encode(homeDocument), forKey: "ark.native.composer-document.new-session")
+        defaults.set(homeJournal, forKey: "ark.native.composer-attachments.new-session")
+        let endpoint = URL(string: "http://ark-composer-isolation.invalid")!
+        let model = ArkAppModel(client: ArkAPIClient(baseURL: endpoint, apiToken: "synthetic-contract", session: transport),
+          interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic-contract", session: transport),
+          eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic-contract"),
+          fallbackWikiRoot: root, documentStore: store, defaults: defaults)
+        ComposerIsolationURLProtocol.reset()
+        let homeRestored = await composerIsolationEventually { model.pendingImages == homeImages }
+        check(homeRestored, "cold migrated fixture restores the home attachments before navigation")
+        await model.loadSettings()
+        model.selectSession(targetID)
+        let ready = await composerIsolationEventually { model.composerModelRouteAvailable && model.pendingImages == images }
+        check(ready, "cold migrated target restores its captured payload without a migration map (\(route), newerHome=\(newerHome))")
+        for state in command ? ["unknown", "running"] : ["rejected"] {
+          model.sendComposer()
+          let held = await composerIsolationEventually {
+            command ? ComposerIsolationURLProtocol.latestCommand != nil : ComposerIsolationURLProtocol.latestPrompt != nil
+          }
+          check(held, "cold migrated retry reaches its controlled transport (\(route), \(state))")
+          if command { ComposerIsolationURLProtocol.releaseCommand(state: state) }
+          else { ComposerIsolationURLProtocol.releasePrompt(success: false) }
+          let settled = await composerIsolationEventually { !model.composerSubmissionInFlight }
+          let home = try await store.restorePendingSubmission(sessionID: nil)
+          let target = try await store.restorePendingSubmission(sessionID: targetID)
+          check(settled && home?.document == homeDocument && home?.images == homeImages
+            && target?.document.submissionID == targetID,
+            "uncertain migrated retry preserves both durable receipts (\(route), \(state), newerHome=\(newerHome))")
+        }
+        model.sendComposer()
+        let held = await composerIsolationEventually {
+          command ? ComposerIsolationURLProtocol.latestCommand != nil : ComposerIsolationURLProtocol.latestPrompt != nil
+        }
+        check(held, "cold migrated terminal retry reaches its controlled transport (\(route))")
+        if command {
+          ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: route == "command-error" ? "error" : "success")
+        } else { ComposerIsolationURLProtocol.releasePrompt(success: true) }
+        let settled = await composerIsolationEventually { !model.composerSubmissionInFlight }
+        let home = try await store.restorePendingSubmission(sessionID: nil)
+        let target = try await store.restorePendingSubmission(sessionID: targetID)
+        check(settled && (newerHome ? home?.document == homeDocument && home?.images == homeImages
+          : home?.document.submissionID != targetID && home?.document.text.isEmpty == true),
+          "cold migrated terminal receipt retires only the original home identity (\(route), newerHome=\(newerHome))")
+        if route == "command-error" {
+          check(target?.document.submissionID == nil && target?.document.text == captured.text
+            && target?.images == images && model.composer == captured.text,
+            "cold migrated terminal error preserves target content and attachments")
+        } else {
+          check(target?.document.submissionID == nil && target?.document.text.isEmpty == true && model.composer.isEmpty,
+            "cold migrated success clears only the acknowledged target payload (\(route))")
+        }
+        await model.shutdown()
+      } catch { check(false, "cold migrated receipt \(route), newerHome=\(newerHome): \(error)") }
+    }
+  }
 }
 
 @MainActor
@@ -548,12 +639,17 @@ private func runComposerCommandReceiptChecks(model: ArkAppModel, store: ArkDocum
   check(ComposerIsolationURLProtocol.latestCommand?["invocationId"]?.stringValue == creationID,
     "main command retry retains its identity after a completed prerequisite replay")
   ComposerIsolationURLProtocol.releaseCommand(state: "completed", resultKind: "error")
-  _ = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  let migratedErrorSettled = await composerIsolationEventually { !model.composerSubmissionInFlight }
+  check(migratedErrorSettled, "completed migrated error settles its native submission before reading durable identities")
   check(model.composer == "/record created session", "completed new-session error preserves the migrated draft")
   do {
     let target = try await store.restorePendingSubmission(sessionID: creationID)
     let home = try await store.restorePendingSubmission(sessionID: nil)
-    check(target?.document.submissionID == nil && home?.document.submissionID != creationID,
+    let identitiesRetired = target?.document.submissionID == nil && home?.document.submissionID != creationID
+    if !migratedErrorSettled || !identitiesRetired {
+      print("[migrated-error-state] settled=\(migratedErrorSettled) inFlight=\(model.composerSubmissionInFlight) creationID=\(creationID ?? "nil") targetID=\(target?.document.submissionID ?? "nil") homeID=\(home?.document.submissionID ?? "nil") targetRevision=\(target?.document.revision.description ?? "nil") homeRevision=\(home?.document.revision.description ?? "nil") targetTextMatches=\(target?.document.text == model.composer) error=\(model.composerErrorMessage ?? "nil")")
+    }
+    check(identitiesRetired,
       "completed migrated error retires both target and home identities without removing target content")
   } catch { check(false, "migrated terminal error restores its preserved draft: \(error)") }
   model.sendComposer()

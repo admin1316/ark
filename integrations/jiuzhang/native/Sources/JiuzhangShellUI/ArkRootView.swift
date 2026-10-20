@@ -7136,7 +7136,7 @@ private struct NativeComposer: View {
     let canShowSend = subagentState.canSend
       && (model.selectedSession?.running != true || subagentState == .continuable)
     VStack(spacing: 8) {
-      if let error = model.composerErrorMessage, !error.isEmpty {
+      if let error = model.composerDisplayErrorMessage, !error.isEmpty {
         NativeSettingsNotice(text: error, color: .red, icon: "exclamationmark.triangle.fill")
           .accessibilityIdentifier("ark.composer.error")
           .padding(.horizontal, 8)
