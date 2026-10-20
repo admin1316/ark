@@ -94,6 +94,9 @@ export interface Config {
 /** Default Keychain service name; deployments may override it per environment. */
 export const DEFAULT_KEYCHAIN_SERVICE = 'dsh.credentials'
 
+/** Keep every Keychain command in the login domain, independent of ambient HOME or secrets. */
+const KEYCHAIN_ENVIRONMENT = Object.freeze({ PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' })
+
 /** Fully resolved provider parameters; defaulting happens here, never inline. */
 interface ResolvedSpec {
   filename: string
@@ -594,7 +597,7 @@ export class LocalCredentialProvider extends CredentialProvider {
   /** Run one /usr/bin/security command; resolves its trimmed stdout. */
   private security(args: readonly string[]): Promise<string> {
     return new Promise((resolvePromise, reject) => {
-      execFile('/usr/bin/security', args, (error, stdout) => {
+      execFile('/usr/bin/security', args, { env: KEYCHAIN_ENVIRONMENT }, (error, stdout) => {
         if (error !== null) {
           // Exit 44 is the tool's "item not found"; treat as absent.
           if (exitCodeOf(error) === 44) {
@@ -627,7 +630,7 @@ export class LocalCredentialProvider extends CredentialProvider {
           cols: 80,
           rows: 24,
           cwd: '/',
-          env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+          env: KEYCHAIN_ENVIRONMENT,
         },
       )
       const prompts = ['password data for new item:', 'retype password for new item:']

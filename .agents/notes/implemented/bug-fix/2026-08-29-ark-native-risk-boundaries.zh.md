@@ -18,6 +18,8 @@ Native 构建只产候选。输出 owner 拒绝正式、link-shaped、嵌套与�
 
 Provider mutation 为每个 Provider 保留一个持久事务 identity。active journal 只包含设置意图与 credential digest，绝不包含凭据材料。macOS Keychain 写入在私有伪终端中运行 `/usr/bin/security`，通过终端输入完成两次确认；值不会进入 argv、捕获输出、文档或向上传播的诊断。
 
+钥匙串读取、写入和删除命令共用一份仅含 `PATH`、`LANG` 与 `LC_ALL` 的显式环境，排除外围凭据与 `HOME`；临时 OS home 不得让读取方搜索不同于写入方的钥匙串域。事务的条件凭据检查仍为权威。
+
 Workbench Git 操作在启动时捕获 clean file-tab 状态。改变 worktree 的操作成功后，只有当前状态仍与该 clean snapshot 完全相同时才重置 tabs；之后产生的编辑、打开的 tab 与选择变化继续由用户拥有，现有保存 CAS 会拒绝外部文件冲突。
 
 `ArkEventPump.stop()` 是所有并发调用方共享的一次异步 quiescence 操作。它取消 socket 与 receive task，等待全部 task 后才结束 stream。`ArkAppModel.shutdown()` 等待该操作完成，AppKit 才释放界面或启动替代 backend lifecycle。
@@ -45,6 +47,8 @@ Artifact policy contracts 会拒绝不安全输出与缺失 Host route。Provide
 **通过 `security -w` argv 传入 Keychain 值。** 进程检查与子进程诊断可能暴露它，因此 argv 不再承载凭据材料。
 
 **把值写入普通 stdin。** macOS `security -w` 从 controlling terminal 读取并要求确认；普通 pipe 可能在没有保存预期值时仍退出。实现复用已锁定的 `node-pty` 依赖并要求两个提示都出现。
+
+**钥匙串读取和删除继承环境。** 变化的 `HOME` 可能重定向其搜索域，而环境已清理的 PTY 写入方仍存入登录域。所有命令使用写入方的显式环境，使事务保持一致，无需削弱摘要检查，也不暴露外围秘密。
 
 **在整个 Git 操作期间禁用编辑器。** 这会缩小用户交互，却不能证明迟到回调会保留状态。snapshot owner 保留正常编辑，并在 destructive reset 的 commit point 进行条件判定。
 

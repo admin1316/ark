@@ -18,6 +18,8 @@ The canonical production bundle is `~/Ark.app`, separate from the source checkou
 
 Provider mutation keeps one durable transaction identity per Provider. Its active journal contains settings intent and a credential digest, never credential material. macOS Keychain writes run `/usr/bin/security` in a private pseudoterminal and provide both confirmations through terminal input; the value never enters argv, captured output, a document, or a propagated diagnostic.
 
+Keychain read, write and delete commands share one explicit environment containing only `PATH`, `LANG` and `LC_ALL`. They exclude ambient credentials and `HOME`; a temporary OS home must not make a reader search a different Keychain domain from the writer. The transaction's conditional credential checks remain authoritative.
+
 Workbench Git operations capture the clean file-tab state at launch. A successful worktree-changing operation resets tabs only when the current state is still exactly that clean snapshot; later edits, opened tabs, and selection changes remain owned by the user and existing save CAS rejects external-file conflicts.
 
 `ArkEventPump.stop()` is one asynchronous quiescence operation shared by concurrent callers. It cancels sockets and receive tasks, awaits every task, then finishes the stream. `ArkAppModel.shutdown()` awaits that operation before AppKit releases the interface or starts a replacement backend lifecycle.
@@ -45,6 +47,8 @@ Artifact-policy contracts reject unsafe outputs and missing Host routes. Provide
 **Pass the Keychain value to `security -w` in argv.** Process inspection and child diagnostics can expose it, so argv never carries credential material.
 
 **Pipe the value to ordinary stdin.** macOS `security -w` reads and confirms through a controlling terminal; a pipe can exit without storing the intended value. The implementation uses the already-pinned `node-pty` dependency and requires both prompts.
+
+**Inherit the environment for Keychain reads and deletions.** A changed `HOME` can redirect their search domain while the scrubbed PTY writer still stores in the login domain. Using the writer's explicit environment for every command keeps the transaction coherent without weakening its digest checks or exposing ambient secrets.
 
 **Disable the editor for the entire Git operation.** This narrows user interaction without proving that late callbacks preserve state. Snapshot ownership retains normal editing and makes the destructive reset conditional at its commit point.
 

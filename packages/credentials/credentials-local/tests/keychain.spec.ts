@@ -15,7 +15,12 @@ interface KeychainItem {
 
 const { keychainCalls, execFileMock, ptySpawnMock } = vi.hoisted(() => {
   const keychainCalls: KeychainItem[] = []
-  const execFileMock = vi.fn((file: string, args: readonly string[], callback: (error: unknown, stdout: string) => void) => {
+  const execFileMock = vi.fn((
+    file: string,
+    args: readonly string[],
+    _options: { env: NodeJS.ProcessEnv },
+    callback: (error: unknown, stdout: string) => void,
+  ) => {
     expect(file).toBe('/usr/bin/security')
     const key = args[args.indexOf('-a') + 1]
     const matches = keychainCalls.filter(call => call.args[call.args.indexOf('-a') + 1] === key)
@@ -40,7 +45,7 @@ const { keychainCalls, execFileMock, ptySpawnMock } = vi.hoisted(() => {
     }
     callback(null, '')
   })
-  const ptySpawnMock = vi.fn((file: string, args: readonly string[]) => {
+  const ptySpawnMock = vi.fn((file: string, args: readonly string[], _options: { env: NodeJS.ProcessEnv }) => {
     expect(file).toBe('/usr/bin/security')
     let dataListener: ((data: string) => void) | undefined
     let exitListener: ((event: { exitCode: number; signal: number }) => void) | undefined
@@ -202,9 +207,42 @@ describe('keychain construction and failure surfaces', () => {
       .toEqual({ configured: false, writable: true })
   })
 
+  it('keeps conditional writes, reads and deletion in one login domain under an isolated HOME', async () => {
+    vi.stubEnv('HOME', join(tmpdir(), 'ark-keychain-synthetic-home'))
+    vi.stubEnv('DSH_KEYCHAIN_ENV_TEST_TOKEN', 'ambient-synthetic-only')
+    vi.stubEnv('PATH', '/synthetic-bin')
+    vi.stubEnv('LANG', 'synthetic-locale')
+    vi.stubEnv('LC_ALL', 'synthetic-locale')
+    const ctx = await boot()
+    const readStart = execFileMock.mock.calls.length
+    const writeStart = ptySpawnMock.mock.calls.length
+
+    await ctx.credentials.set(KEY, 'first-synthetic', credentialCondition(undefined))
+    const before = await ctx.credentials.resolve(KEY)
+    await ctx.credentials.set(KEY, 'replacement-synthetic', credentialCondition(before))
+    await expect(ctx.credentials.unset(KEY, credentialCondition(before)))
+      .rejects.toMatchObject({ name: 'CredentialConflictError' })
+    const current = await ctx.credentials.resolve(KEY)
+    expect(current).toEqual({ value: 'replacement-synthetic', source: 'keychain' })
+    await ctx.credentials.unset(KEY, credentialCondition(current))
+    expect(await ctx.credentials.resolve(KEY)).toBeUndefined()
+
+    const commands = [
+      ...execFileMock.mock.calls.slice(readStart),
+      ...ptySpawnMock.mock.calls.slice(writeStart),
+    ]
+    expect(new Set(commands.map(([, args]) => args[0])))
+      .toEqual(new Set(['find-generic-password', 'add-generic-password', 'delete-generic-password']))
+    const environments = commands.map(([, , options]) => options.env)
+    for (const environment of environments) {
+      expect(environment).toEqual({ PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' })
+      expect(environment).toBe(environments[0])
+    }
+  })
+
   it('propagates a security failure that is not item-not-found', async () => {
     const ctx = await boot()
-    execFileMock.mockImplementationOnce((_file, _args, callback) => {
+    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
       callback(Object.assign(new Error('security backend down'), { code: 'ECONNREFUSED' }), '')
     })
     await expect(ctx.credentials.resolve(KEY)).rejects.toThrow(/security backend down/)
@@ -212,7 +250,7 @@ describe('keychain construction and failure surfaces', () => {
 
   it('wraps a non-Error security failure in a stable diagnostic', async () => {
     const ctx = await boot()
-    execFileMock.mockImplementationOnce((_file, _args, callback) => {
+    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
       callback({ code: 'EIO' }, '')
     })
     await expect(ctx.credentials.resolve(KEY)).rejects.toThrow(/security command failed/)
@@ -220,7 +258,7 @@ describe('keychain construction and failure surfaces', () => {
 
   it('rethrows an unset failure that is not item-not-found', async () => {
     const ctx = await boot()
-    execFileMock.mockImplementationOnce((_file, _args, callback) => {
+    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
       callback(Object.assign(new Error('keychain locked'), { code: 'EACCES' }), '')
     })
     await expect(ctx.credentials.unset(KEY)).rejects.toThrow(/keychain locked/)
