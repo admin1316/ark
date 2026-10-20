@@ -8,7 +8,7 @@ import { performance } from 'node:perf_hooks'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression } from '../src/format.ts'
+import { eventLines, logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression } from '../src/format.ts'
 import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
   type ZstdFrameDecoder,
@@ -646,6 +646,55 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     const repaired = await readFile(path)
     expect(scanZstdFrames(repaired).tornStart).toBeUndefined()
     expect(scanLog(await decodeCompleteFrames(repaired)).events).toEqual(loaded.events)
+  })
+
+  it('preserves a recovered atomic group through repair and a second torn write', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const header = meta('atomic-repair-checksum')
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    const path = logPath(root, header.cwd, header.id, 'zstd')
+    const committed = await readFile(path)
+    const group: SessionEvent[] = [
+      { type: 'turn/start', seq: 6, time: 7, data: { turn: 2 } },
+      { type: 'step/start', seq: 7, time: 8, data: { turn: 2, step: 1 } },
+    ]
+    const frame = await compressZstdFrame(eventLines(group, false, [{ firstSeq: 6, count: 2 }]) + '\n')
+    await appendFile(path, frame.subarray(0, -1))
+
+    const loaded = await ctx.sessionPersistence.load(header.id)
+    expect(loaded.events.slice(6, 8)).toEqual(group)
+    const repaired = await readFile(path)
+    const rewritten = repaired.subarray(committed.length)
+    const records = (await decodeCompleteFrames(rewritten)).toString('utf8').trimEnd().split('\n')
+      .map(line => JSON.parse(line) as { type: string; events?: SessionEvent[] })
+    expect(records[0]).toMatchObject({ type: 'atomic-events', events: group })
+    for (let cut = 0; cut <= rewritten.length; cut++) {
+      const prefix = await (ctx.sessionPersistence as unknown as ZstdReaderInternals)
+        .readZstdPrefix(Buffer.concat([committed, rewritten.subarray(0, cut)]))
+      const recoveredGroup = prefix.events.filter(event => event.seq === 6 || event.seq === 7)
+      expect([0, 2]).toContain(recoveredGroup.length)
+      if (recoveredGroup.length > 0) expect(recoveredGroup).toEqual(group)
+    }
+    expect((await ctx.sessionPersistence.load(header.id)).events).toEqual(loaded.events)
+  })
+
+  it.each(['none', 'zstd'] as const)('refuses complete corrupt atomic %s records without repairing the source', async (compression) => {
+    const root = await freshRoot()
+    const ctx = await mount(root, compression)
+    const header = meta(`complete-corrupt-atomic-${compression}`)
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    const path = logPath(root, header.cwd, header.id, compression)
+    const record = JSON.stringify({ type: 'atomic-events', version: 1, seq: 6, events: [
+      { type: 'turn/start', seq: 6, time: 7, data: { turn: 2 } },
+      { type: 'step/start', seq: 9, time: 8, data: { turn: 2, step: 1 } },
+    ] }) + '\n'
+    await appendFile(path, compression === 'none' ? record : await compressZstdFrame(record))
+    const before = await readFile(path)
+    await expect(ctx.sessionPersistence.load(header.id)).rejects.toThrow('malformed atomic-events')
+    expect(await readFile(path)).toEqual(before)
   })
 
   it('recovers the prefix when a complete final frame ends mid-record', async () => {

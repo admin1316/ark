@@ -96,6 +96,7 @@ export interface Config {
 interface JsonlTornMarker {
   truncateTo: number
   recoveredEvents: SessionEvent[]
+  recoveredGroups?: readonly SessionAtomicGroup[]
 }
 
 interface FileRevisionIdentity {
@@ -464,6 +465,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         tornMarker: {
           truncateTo: tornStart,
           recoveredEvents: recoveredPrefix.events.slice(complete.eventCount),
+          recoveredGroups: recoveredPrefix.atomicGroups.filter(group => group.firstSeq >= complete.eventCount),
         },
       }
     } catch (error) {
@@ -571,7 +573,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     await this.withMutation(meta.id, async () => {
       if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
       const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
-      if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+      if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents, tornMarker?.recoveredGroups)
     })
     if (tornMarker !== undefined) this.ctx.logger.warn(`${this.name}: session "${meta.id}" recovered from a torn tail; incomplete tail bytes were discarded`)
   }

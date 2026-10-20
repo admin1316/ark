@@ -288,6 +288,7 @@ function expandProvenanceFromStorage(parsed: unknown): unknown {
 interface SessionLogScan {
   meta: SessionHeader
   events: SessionEvent[]
+  atomicGroups: SessionAtomicGroup[]
   committedBytes: number
 }
 
@@ -334,6 +335,7 @@ function parseHeaderRecord(record: Buffer): SessionHeader {
 export class SessionLogScanner {
   private readonly meta: SessionHeader
   private readonly events: SessionEvent[] = []
+  private readonly atomicGroups: SessionAtomicGroup[] = []
   private fragments: Buffer[] = []
   private fragmentBytes = 0
   private inputBytes: number
@@ -402,30 +404,26 @@ export class SessionLogScanner {
    */
   finish(): SessionLogScan {
     this.finished = true
-    return { meta: this.meta, events: this.events, committedBytes: this.committedBytes }
+    return { meta: this.meta, events: this.events, atomicGroups: this.atomicGroups, committedBytes: this.committedBytes }
   }
 
   /** Decode one complete event row and update the contiguous prefix. */
   private consumeEventLine(line: Buffer, endByte: number): void {
     this.eventLine += 1
     let decoded: SessionEvent[]
-    let parsed: unknown
+    let atomic = false
     try {
-      parsed = JSON.parse(line.toString('utf8')) as unknown
+      const parsed = JSON.parse(line.toString('utf8')) as unknown
+      atomic = parsed !== null && typeof parsed === 'object' && 'type' in parsed && parsed.type === 'atomic-events'
       decoded = decodeStorageRecord(expandProvenanceFromStorage(parsed))
     } catch (error) {
+      if (atomic) throw new Error(`corrupt session log: ${String(error)}`, { cause: error })
       this.issue ??= new Error(`corrupt session log: unparsable committed event at line ${this.eventLine}`)
-      if (parsed !== null && typeof parsed === 'object' && 'type' in parsed && parsed.type === 'atomic-events') {
-        const row = parsed as { version?: unknown; events?: unknown }
-        if (row.version !== 1) throw error
-        if (Array.isArray(row.events) && row.events.some((event: unknown) => event !== null && typeof event === 'object'
-          && 'type' in event && event.type === 'turn/end')) throw this.issue
-      }
       return
     }
 
     if (this.issue !== undefined) {
-      if (decoded.some(event => event.type === 'turn/end')) throw this.issue
+      if (atomic || decoded.some(event => event.type === 'turn/end')) throw this.issue
       return
     }
 
@@ -438,11 +436,12 @@ export class SessionLogScanner {
           `corrupt session log: seq gap in committed region at line ${this.eventLine} `
           + `(expected ${expected}, got ${event.seq})`,
         )
-        if (decoded.some(candidate => candidate.type === 'turn/end')) throw this.issue
+        if (atomic || decoded.some(candidate => candidate.type === 'turn/end')) throw this.issue
         return
       }
       this.events.push(event)
     }
+    if (atomic) this.atomicGroups.push({ firstSeq: rowStart, count: decoded.length })
     this.committedBytes = endByte
   }
 }

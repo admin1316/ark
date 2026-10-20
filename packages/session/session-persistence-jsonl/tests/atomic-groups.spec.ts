@@ -50,9 +50,22 @@ describe('atomic JSONL physical records', () => {
 
   it('rejects an invalid atomic member as a whole and refuses to export damaged bytes', async () => {
     const damaged = Buffer.from(JSON.stringify({ type: 'atomic-events', version: 1, seq: 2, events: [group[0], { ...group[1], seq: 77 }] }) + '\n')
-    expect(scanLog(Buffer.concat([before, damaged])).events).toEqual(prefix)
-    await expect(exportLegacySessionArtifact(Buffer.concat([before, damaged]), 'none')).rejects.toThrow('complete artifact')
+    expect(() => scanLog(Buffer.concat([before, damaged]))).toThrow('malformed atomic-events')
+    await expect(exportLegacySessionArtifact(Buffer.concat([before, damaged]), 'none')).rejects.toThrow('malformed atomic-events')
     await expect(exportLegacySessionArtifact(Buffer.concat([before, row.subarray(0, row.length - 1)]), 'none')).rejects.toThrow('complete artifact')
+  })
+
+  it.each([
+    { name: 'guard mismatch', seq: 3, events: group, error: 'guard seq' },
+    { name: 'missing member data', seq: 2, events: [{ type: 'step/start', seq: 2, time: 3 }], error: 'invalid member event envelope' },
+    { name: 'global sequence gap', seq: 3, events: [{ ...group[0], seq: 3 }], error: 'seq gap in committed region' },
+  ])('refuses a complete atomic record with $name before a turn end exists', ({ seq, events, error }) => {
+    const damaged = Buffer.from(JSON.stringify({ type: 'atomic-events', version: 1, seq, events }) + '\n')
+    expect(() => scanLog(Buffer.concat([before, damaged]))).toThrow(error)
+  })
+
+  it('refuses an earlier corrupt scalar suffix when a complete atomic group follows it', () => {
+    expect(() => scanLog(Buffer.concat([before, Buffer.from('{bad json}\n'), row]))).toThrow('unparsable committed event')
   })
 
   it('refuses unknown atomic record versions and corruption containing a committed turn boundary', () => {
