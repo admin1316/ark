@@ -20,6 +20,8 @@ The Host activity signal owns cancellation independently of HTTP response observ
 
 ### Native acknowledgement
 
+Native decoding rejects missing or non-string error text, non-string optional success text, and source-event references on error results before any journal acknowledgement. A malformed response preserves the original submission identity for receipt recovery.
+
 One native submission owner uses the existing private inflight journal and preserves the complete confirmed terminal result. A successful composer receipt clears only its captured payload. After displaying a confirmed error, the composer durably replaces the matching draft's submission metadata while keeping its text, references and attachment journal, then retires the old inflight identity. A subsequent explicit submission receives a new identity; no submission starts automatically. Compare-and-save preserves later edits, and a failed draft acknowledgement keeps the original identity available for a receipt query. Independent button and menu actions also retire a completed error only after displaying it. Neither path converts `running`, `unknown`, unconfirmed result durability or a transport failure into a new invocation.
 
 A new-session permission prerequisite derives a distinct identity from the captured parent submission and exact permission command, so retrying after a lost local acknowledgement still observes the same prerequisite. A successful explicit permission choice clears the matching draft's frozen prerequisite through a durable compare-and-save while preserving the main submission identity.

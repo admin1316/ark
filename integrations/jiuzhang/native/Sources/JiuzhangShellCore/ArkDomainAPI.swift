@@ -536,11 +536,19 @@ public enum ArkDomainAPIContract {
           let kindValue = resultValue["kind"]?.stringValue,
           let kind = ArkCommandResultKind(rawValue: kindValue)
     else { throw invalidResponse("session/command") }
+    let text: String?
+    if let rawText = resultValue["text"] {
+      guard let value = rawText.stringValue else { throw invalidResponse("session/command text") }
+      text = value
+    } else {
+      guard kind == .success else { throw invalidResponse("session/command error text") }
+      text = nil
+    }
     let sourceSequence: Int?
     if resultValue["sourceEventSeq"] == nil {
       sourceSequence = nil
     } else {
-      guard let parsed = nonnegativeInteger(resultValue["sourceEventSeq"]) else {
+      guard kind == .success, let parsed = nonnegativeInteger(resultValue["sourceEventSeq"]) else {
         throw invalidResponse("session/command sourceEventSeq")
       }
       sourceSequence = parsed
@@ -548,7 +556,7 @@ public enum ArkDomainAPIContract {
     return ArkCommandExecution(
       id: commandID,
       result: kind,
-      text: resultValue["text"]?.stringValue,
+      text: text,
       sourceEventSequence: sourceSequence
     )
   }

@@ -597,6 +597,42 @@ func runArkDomainAPIContractChecks() {
   ]))
   check(completedCommand == .completed(ArkCommandExecution(id: "command-1", result: .success, text: "recorded")),
         "native command submission preserves a completed durable outcome")
+  let validCommandResults: [(JSONValue, ArkCommandExecution)] = [
+    (.object(["kind": .string("success")]), ArkCommandExecution(id: "command-1", result: .success)),
+    (.object(["kind": .string("success"), "text": .string(""), "sourceEventSeq": .number(0)]),
+      ArkCommandExecution(id: "command-1", result: .success, text: "", sourceEventSequence: 0)),
+    (.object(["kind": .string("error"), "text": .string("synthetic error")]),
+      ArkCommandExecution(id: "command-1", result: .error, text: "synthetic error")),
+    (.object(["kind": .string("error"), "text": .string("")]),
+      ArkCommandExecution(id: "command-1", result: .error, text: "")),
+  ]
+  for (result, expected) in validCommandResults {
+    check((try? ArkDomainAPIContract.commandOutcome(from: .object([
+      "state": .string("completed"), "commandId": .string("command-1"), "result": result,
+    ]))) == .completed(expected), "native completed command preserves valid optional result fields")
+  }
+  let invalidCommandResults: [(String, JSONValue)] = [
+    ("missing error text", .object(["kind": .string("error")])),
+    ("numeric error text", .object(["kind": .string("error"), "text": .number(1)])),
+    ("null error text", .object(["kind": .string("error"), "text": .null])),
+    ("numeric success text", .object(["kind": .string("success"), "text": .number(1)])),
+    ("null success text", .object(["kind": .string("success"), "text": .null])),
+    ("error result source", .object(["kind": .string("error"), "text": .string("synthetic error"),
+      "sourceEventSeq": .number(0)])),
+    ("negative result source", .object(["kind": .string("success"), "sourceEventSeq": .number(-1)])),
+    ("fractional result source", .object(["kind": .string("success"), "sourceEventSeq": .number(0.5)])),
+    ("null result source", .object(["kind": .string("success"), "sourceEventSeq": .null])),
+  ]
+  for (description, result) in invalidCommandResults {
+    do {
+      _ = try ArkDomainAPIContract.commandOutcome(from: .object([
+        "state": .string("completed"), "commandId": .string("command-1"), "result": result,
+      ]))
+      check(false, "native completed command rejects \(description) before receipt acknowledgement")
+    } catch {
+      check(true, "native completed command rejects \(description) before receipt acknowledgement")
+    }
+  }
   check((try? ArkDomainAPIContract.commandOutcome(from: .object([
     "state": .string("running"), "commandId": .string("command-1"),
   ]))) == .running(commandID: "command-1"), "native command submission preserves a running receipt")
