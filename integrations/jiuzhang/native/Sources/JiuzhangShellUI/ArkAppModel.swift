@@ -3439,18 +3439,37 @@ public final class ArkAppModel: ObservableObject {
   /// Save the final frozen composer version; failures retain snapshots for an explicit retry.
   public func flushFrozenComposerDrafts() async -> String? {
     guard nativeInputFrozen, !composerStopped else { return "恢复草稿尚未进入最终保存阶段" }
+    let sessionID = selectedSessionID
+    let key = Keys.draft(sessionID)
+    @MainActor func canFinish() -> Bool {
+      !Task.isCancelled && !composerStopped && nativeInputFrozen && selectedSessionID == sessionID
+    }
     let submission = composerSubmissionTask
     submission?.cancel()
     await commandSubmissions.stop(cancelResponseWaiters: true)
+    guard canFinish() else { return "恢复草稿保存已停止" }
     if let submission { await submission.value }
-    for task in Array(composerAttachmentTasks.values) { await task.value }
-    let key = Keys.draft(selectedSessionID)
+    guard canFinish() else { return "恢复草稿保存已停止" }
+    for task in Array(composerAttachmentTasks.values) {
+      await task.value
+      guard canFinish() else { return "恢复草稿保存已停止" }
+    }
+    if composerAttachmentFailedKeys.contains(key),
+       let restoring = restoreComposerAttachments(for: sessionID, preservingFrozenDraft: true) {
+      await withTaskCancellationHandler {
+        await restoring.value
+      } onCancel: {
+        restoring.cancel()
+      }
+      guard canFinish() else { return "恢复草稿保存已停止" }
+    }
     guard !composerAttachmentRestores.contains(key), !composerAttachmentFailedKeys.contains(key) else {
       return "恢复草稿附件尚未确认保存，请重试或明确强制退出"
     }
     for (key, snapshot) in failedComposerWrites { composerPersistence.enqueue(snapshot, for: key) }
-    persistComposerDraft(for: selectedSessionID)
+    persistComposerDraft(for: sessionID)
     await composerPersistence.flush()
+    guard canFinish() else { return "恢复草稿保存已停止" }
     return composerWriteErrors.values.first.map { "草稿保存失败：\($0)" }
   }
 
@@ -4731,12 +4750,13 @@ public final class ArkAppModel: ObservableObject {
     }
   }
 
-  private func restoreComposerAttachments(for sessionID: String?) {
+  @discardableResult
+  private func restoreComposerAttachments(for sessionID: String?, preservingFrozenDraft: Bool = false) -> Task<Void, Never>? {
     let key = Keys.draft(sessionID)
     composerAttachmentRestoreFailed = composerAttachmentFailedKeys.contains(key)
     composerRecoverableSubmissionCount = composerRecoverableSubmissions[key]?.count ?? 0
     guard !composerStopped, !composerAttachmentRestores.contains(key), pendingImages.isEmpty, pendingDocuments.isEmpty,
-      composerAttachmentsBySession[key] == nil else { return }
+      composerAttachmentsBySession[key] == nil else { return nil }
     let identifier = defaults.string(forKey: Keys.draftAttachments(sessionID))
     let capturedDocument = selectedSessionID == sessionID ? composerDraftDocument
       : Self.loadComposerDraft(defaults: defaults, sessionID: sessionID)
@@ -4745,8 +4765,14 @@ public final class ArkAppModel: ObservableObject {
     composerAttachmentRestores.insert(key)
     composerAttachmentRestoreOwners[key] = generation
     let taskID = UUID()
-    composerAttachmentTasks[taskID] = Task { [weak self] in
+    let task = Task { [weak self] in
       guard let self else { return }
+      @MainActor func ownsRestore() -> Bool {
+        !Task.isCancelled && !self.composerStopped && self.composerAttachmentGenerations[key] == generation
+          && (!preservingFrozenDraft || (self.nativeInputFrozen && self.selectedSessionID == sessionID
+            && self.composerDraftDocument == capturedDocument
+            && self.defaults.string(forKey: Keys.draftAttachments(sessionID)) == identifier))
+      }
       defer {
         self.composerAttachmentTasks.removeValue(forKey: taskID)
         if self.composerAttachmentRestoreOwners[key] == generation {
@@ -4756,8 +4782,13 @@ public final class ArkAppModel: ObservableObject {
       }
       do {
         let inflight = try await self.documentStore.restoreInflightSubmissions(sessionID: sessionID)
-        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        guard ownsRestore() else { return }
         let pending = try await self.documentStore.restorePendingSubmission(sessionID: sessionID)
+        guard ownsRestore() else { return }
+        if preservingFrozenDraft, let pending,
+           pending.document != capturedDocument || pending.journalIdentifier != identifier {
+          throw ArkAPIError(message: "恢复记录与最终草稿不同，保留当前输入以供检查")
+        }
         let activeSubmissionID = pending?.document.submissionID ?? capturedDocument.submissionID
         self.composerRecoverableSubmissions[key] = inflight.filter { $0.document.submissionID != activeSubmissionID }
         if self.selectedSessionID == sessionID {
@@ -4768,8 +4799,11 @@ public final class ArkAppModel: ObservableObject {
           restored = (pending.images, pending.documents)
         } else if let identifier {
           restored = try await self.documentStore.restoreDraftAttachments(identifier)
-        } else { return }
-        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        } else {
+          guard preservingFrozenDraft, self.composerRecoverableSubmissions[key]?.isEmpty == false else { return }
+          restored = ([], [])
+        }
+        guard ownsRestore() else { return }
         let current = self.selectedSessionID == sessionID ? self.composerDraftDocument
           : Self.loadComposerDraft(defaults: self.defaults, sessionID: sessionID)
         guard current == capturedDocument else { return }
@@ -4785,7 +4819,7 @@ public final class ArkAppModel: ObservableObject {
           self.pendingDocuments = restored.documents
         } else { self.storeComposerAttachments(restored.images, documents: restored.documents, for: sessionID) }
       } catch {
-        guard !Task.isCancelled, self.composerAttachmentGenerations[key] == generation else { return }
+        guard ownsRestore() else { return }
         self.composerAttachmentFailedKeys.insert(key)
         if self.selectedSessionID == sessionID {
           self.composerAttachmentRestoreFailed = true
@@ -4793,6 +4827,8 @@ public final class ArkAppModel: ObservableObject {
         }
       }
     }
+    composerAttachmentTasks[taskID] = task
+    return task
   }
 
   private func retireRecoverableSubmission(_ submissionID: String?) {

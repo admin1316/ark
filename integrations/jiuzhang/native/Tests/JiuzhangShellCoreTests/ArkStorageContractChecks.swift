@@ -27,11 +27,13 @@ private final class StorageContractURLProtocol: URLProtocol, @unchecked Sendable
   private static var commandRequests: [JSONValue] = []
   private static var heldCommands: [StorageContractURLProtocol] = []
   private static var commandCancellations = 0
+  private static var methods: [String] = []
 
   static func reset() {
     lock.lock(); defer { lock.unlock() }
     epoch = 0; value = storageFixture(); holdState = false; held = []; requests = []; losePrepareResponse = false
     commandRequests = []; heldCommands = []; commandCancellations = 0
+    methods = []
   }
   static func holdNextObservation() { lock.lock(); holdState = true; lock.unlock() }
   static var heldCount: Int { lock.lock(); defer { lock.unlock() }; return held.count }
@@ -39,6 +41,7 @@ private final class StorageContractURLProtocol: URLProtocol, @unchecked Sendable
   static var captured: [JSONValue] { lock.lock(); defer { lock.unlock() }; return requests }
   static var capturedCommands: [JSONValue] { lock.lock(); defer { lock.unlock() }; return commandRequests }
   static var cancelledCommands: Int { lock.lock(); defer { lock.unlock() }; return commandCancellations }
+  static var capturedMethods: [String] { lock.lock(); defer { lock.unlock() }; return methods }
   static func releaseCommands() {
     lock.lock(); let items = heldCommands; heldCommands = []; lock.unlock()
     for item in items { item.client?.urlProtocol(item, didFailWithError: URLError(.cancelled)) }
@@ -63,9 +66,10 @@ private final class StorageContractURLProtocol: URLProtocol, @unchecked Sendable
         }
       }
       let envelope = try JSONDecoder().decode(JSONValue.self, from: bytes)
-      guard let method = envelope["method"]?.stringValue, let rpcID = envelope["rpcId"],
-            let action = envelope["payload"]?["args"]?["request"]
+      guard let method = envelope["method"]?.stringValue, let rpcID = envelope["rpcId"]
       else { throw URLError(.badServerResponse) }
+      Self.lock.lock(); Self.methods.append(method); Self.lock.unlock()
+      guard let action = envelope["payload"]?["args"]?["request"] else { throw URLError(.badServerResponse) }
       if method == "session/command" {
         Self.lock.lock(); Self.commandRequests.append(action); Self.heldCommands.append(self); Self.lock.unlock()
         return
@@ -202,7 +206,218 @@ func runArkStorageContractChecks() async {
   try? FileManager.default.removeItem(at: root)
   StorageContractURLProtocol.reset()
   await runStoragePostSafeTransportChecks()
+  await runFrozenAttachmentRestoreChecks()
   await runFrozenNativeDraftChecks()
+}
+
+private final class FrozenAttachmentStoreGate: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var entered = false
+  private var released = false
+  var hasEntered: Bool { condition.lock(); defer { condition.unlock() }; return entered }
+  func wait() {
+    condition.lock(); defer { condition.unlock() }
+    entered = true
+    while !released { condition.wait() }
+  }
+  func release() { condition.lock(); released = true; condition.broadcast(); condition.unlock() }
+}
+
+private extension ArkDocumentReferenceStore {
+  func holdFrozenAttachmentRestore(_ gate: FrozenAttachmentStoreGate) { gate.wait() }
+}
+
+@MainActor
+private func runFrozenAttachmentRestoreChecks() async {
+  let manager = FileManager.default
+  for scenario in ["recovered", "edited", "added-image", "stopped", "cancelled"] {
+    let root = manager.temporaryDirectory.appendingPathComponent("ark-frozen-attachments-\(UUID().uuidString)")
+    let suite = "ark-frozen-attachments-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite); try? manager.removeItem(at: root) }
+    StorageContractURLProtocol.reset()
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [StorageContractURLProtocol.self]
+    let transport = URLSession(configuration: config)
+    defer { transport.invalidateAndCancel() }
+    do {
+      let documents = root.appendingPathComponent("documents")
+      let preserved = root.appendingPathComponent("preserved-documents")
+      try manager.createDirectory(at: documents, withIntermediateDirectories: true)
+      let seed = ArkDocumentReferenceStore(rootURL: documents)
+      let attachment = try await seed.importPastedText("synthetic preserved attachment body", name: "fixture.txt")
+      let image = ArkPromptImage(mediaType: .png, data: Data([1, 2, 3]), name: "fixture.png")
+      var document = ArkComposerDraftDocument(text: "/permission synthetic-preserved")
+      document.prepareSubmission(mode: .queue, timeZone: "Pacific/Auckland", permissionPreset: "read-only")
+      let journal = try await seed.persistComposerState(document: document, sessionID: nil,
+        images: [image], documents: [attachment])
+      _ = try await seed.persistInflightComposerSubmission(document: document, sessionID: nil,
+        images: [image], documents: [attachment])
+      defaults.set(try JSONEncoder().encode(document), forKey: "ark.native.composer-document.new-session")
+      defaults.set(document.text, forKey: "ark.native.composer-draft.new-session")
+      defaults.set(journal, forKey: "ark.native.composer-attachments.new-session")
+      try manager.moveItem(at: documents, to: preserved)
+      let store = ArkDocumentReferenceStore(rootURL: documents)
+      let endpoint = URL(string: "http://ark-storage.invalid")!
+      let model = ArkAppModel(client: ArkAPIClient(baseURL: endpoint, apiToken: "synthetic", session: transport),
+        interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic", session: transport),
+        eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic"),
+        fallbackWikiRoot: root.appendingPathComponent("wiki"), documentStore: store, defaults: defaults)
+      let deadline = Date().addingTimeInterval(2)
+      while !model.composerAttachmentRestoreFailed && Date() < deadline {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      check(model.composerAttachmentRestoreFailed && model.composer == document.text
+        && model.pendingImages.isEmpty && model.pendingDocuments.isEmpty,
+        "cold missing attachments preserve the real draft and expose restoration failure (\(scenario))")
+      if scenario == "edited" {
+        model.composerTextDidChange("later unsaved text", caret: 18, isComposing: false)
+      } else if scenario == "added-image" {
+        model.addPastedImage(data: Data([4, 5, 6]), mediaType: .png)
+      }
+      model.freezeNativeInput()
+      let missing = await model.flushFrozenComposerDrafts()
+      check(missing != nil && model.composerAttachmentRestoreFailed,
+        "a frozen retry cannot acknowledge missing attachments (\(scenario))")
+      try manager.moveItem(at: preserved, to: documents)
+      if scenario == "recovered" {
+        let journalURL = documents.appendingPathComponent("draft-\(journal).json")
+        let journalBytes = try Data(contentsOf: journalURL)
+        try Data("synthetic damaged journal".utf8).write(to: journalURL)
+        let corrupted = await model.flushFrozenComposerDrafts()
+        check(corrupted != nil && model.composerAttachmentRestoreFailed && model.pendingImages.isEmpty,
+          "a frozen retry validates the restored journal and retains failure for corrupt bytes")
+        try journalBytes.write(to: journalURL)
+      }
+      if scenario == "stopped" || scenario == "cancelled" {
+        let gate = FrozenAttachmentStoreGate()
+        let holding = Task.detached { await store.holdFrozenAttachmentRestore(gate) }
+        while !gate.hasEntered { await Task.yield() }
+        var finished = false
+        let flushing = Task { let result = await model.flushFrozenComposerDrafts(); finished = true; return result }
+        try await Task.sleep(for: .milliseconds(30))
+        check(!finished, "the frozen retry waits for its actual store owner before reporting a result (\(scenario))")
+        let stopping: Task<Void, Never>?
+        if scenario == "stopped" {
+          stopping = Task { await model.shutdown() }
+          try await Task.sleep(for: .milliseconds(30))
+        } else { stopping = nil; flushing.cancel() }
+        gate.release()
+        await holding.value
+        if let stopping { await stopping.value }
+        let stoppedResult = await flushing.value
+        check(stoppedResult != nil && model.composerAttachmentRestoreFailed
+          && model.pendingImages.isEmpty && model.pendingDocuments.isEmpty && model.composer == document.text,
+          "stop or caller cancellation suppresses late restoration without acknowledging its draft (\(scenario))")
+        if scenario == "cancelled" {
+          let resumed = await model.flushFrozenComposerDrafts()
+          check(resumed == nil && model.pendingImages == [image] && model.pendingDocuments == [attachment],
+            "a later explicit frozen retry can recover after the cancelled observation has settled")
+          await model.shutdown()
+        }
+      } else {
+        let retried = await model.flushFrozenComposerDrafts()
+        let restored = try await store.restorePendingSubmission(sessionID: nil)
+        if scenario == "recovered" {
+          check(retried == nil && !model.composerAttachmentRestoreFailed
+            && model.composer == document.text && model.pendingImages == [image] && model.pendingDocuments == [attachment],
+            "frozen retry restores real image and document payloads after their directory returns")
+          check(restored?.document == document && restored?.images == [image] && restored?.documents == [attachment],
+            "the final save preserves the uncertain submission identity and frozen delivery metadata")
+        } else {
+          check(retried != nil && model.composerAttachmentRestoreFailed && restored?.document == document
+            && (scenario == "edited" ? model.composer == "later unsaved text" : model.pendingImages.count == 1),
+            "frozen restoration rejects a newer draft or new attachment instead of reverting or saving a reduced payload (\(scenario))")
+        }
+        await model.shutdown()
+      }
+      let inflight = try await store.restoreInflightSubmissions(sessionID: nil)
+      check(inflight.count == 1 && inflight.first?.document == document
+        && StorageContractURLProtocol.capturedMethods.isEmpty,
+        "final attachment recovery retains the original inflight receipt and performs no RPC (\(scenario))")
+    } catch { check(false, "frozen attachment recovery \(scenario): \(error)") }
+  }
+  for recovery in ["healthy", "frozen", "navigation"] {
+    let initiallyMissingJournal = recovery != "healthy"
+    let suite = "ark-inflight-only-\(UUID().uuidString)"
+    let root = manager.temporaryDirectory.appendingPathComponent(suite)
+    let absent = root.appendingPathExtension("absent")
+    let defaults = UserDefaults(suiteName: suite)!
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      try? manager.removeItem(at: root); try? manager.removeItem(at: absent)
+    }
+    StorageContractURLProtocol.reset()
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [StorageContractURLProtocol.self]
+    let transport = URLSession(configuration: config)
+    defer { transport.invalidateAndCancel() }
+    do {
+      let store = ArkDocumentReferenceStore(rootURL: root)
+      let image = ArkPromptImage(mediaType: .png, data: Data([7, 8, 9]), name: "inflight-only.png")
+      var document = ArkComposerDraftDocument(text: "uncertain inflight without a current draft")
+      document.prepareSubmission(mode: .queue, timeZone: "UTC", permissionPreset: "read-only")
+      let journal = try await store.persistInflightComposerSubmission(document: document, sessionID: nil,
+        images: [image], documents: [])
+      let journalURL = root.appendingPathComponent("draft-\(journal).json")
+      let withheld = root.appendingPathComponent("withheld-journal")
+      if initiallyMissingJournal { try manager.moveItem(at: journalURL, to: withheld) }
+      let endpoint = URL(string: "http://ark-storage.invalid")!
+      let model = ArkAppModel(client: ArkAPIClient(baseURL: endpoint, apiToken: "synthetic", session: transport),
+        interactions: ArkInteractionAPI(baseURL: endpoint, apiToken: "synthetic", session: transport),
+        eventPump: ArkEventPump(baseURL: endpoint, apiToken: "synthetic"),
+        fallbackWikiRoot: root.appendingPathComponent("wiki"), documentStore: store, defaults: defaults)
+      if initiallyMissingJournal {
+        let failureDeadline = Date().addingTimeInterval(2)
+        while !model.composerAttachmentRestoreFailed && Date() < failureDeadline {
+          try await Task.sleep(for: .milliseconds(5))
+        }
+        check(model.composerAttachmentRestoreFailed,
+          "inflight-only cold restoration retains a missing attachment journal as an explicit failure")
+        if recovery == "navigation" {
+          try manager.moveItem(at: root, to: absent)
+          model.selectedSessionID = "unrelated-empty-session"
+          model.selectedSessionID = nil
+          model.freezeNativeInput()
+          let navigated = await model.flushFrozenComposerDrafts()
+          check(navigated != nil && model.composerAttachmentRestoreFailed,
+            "ordinary restoration after navigation cannot clear an earlier failure with an absent store")
+          if manager.fileExists(atPath: root.path) { try manager.removeItem(at: root) }
+          try manager.moveItem(at: absent, to: root)
+        } else { model.freezeNativeInput() }
+        let missing = await model.flushFrozenComposerDrafts()
+        check(model.composerAttachmentRestoreFailed && missing != nil,
+          "final retry retains an inflight-only attachment failure before filesystem repair")
+        try manager.moveItem(at: root, to: absent)
+        let noEvidence = await model.flushFrozenComposerDrafts()
+        check(noEvidence != nil && model.composerAttachmentRestoreFailed,
+          "an absent store cannot clear failed inflight restoration by returning no pending draft or journals")
+        if manager.fileExists(atPath: root.path) { try manager.removeItem(at: root) }
+        try manager.moveItem(at: absent, to: root)
+        try manager.moveItem(at: withheld, to: journalURL)
+        let restored = await model.flushFrozenComposerDrafts()
+        check(restored == nil && !model.composerAttachmentRestoreFailed
+          && model.composer.isEmpty && model.pendingImages.isEmpty,
+          "frozen retry validates repaired inflight-only attachments without installing them into the empty active draft")
+      }
+      let deadline = Date().addingTimeInterval(2)
+      while model.composerRecoverableSubmissionCount != 1 && Date() < deadline {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      check(model.composerRecoverableSubmissionCount == 1 && model.canRestoreUnconfirmedSubmission,
+        "cold recovery exposes an inflight-only submission without a pending draft or attachment preference")
+      if !initiallyMissingJournal {
+        model.restoreUnconfirmedComposerSubmission()
+        check(model.composer == document.text && model.pendingImages == [image],
+          "explicit inflight-only recovery restores its original text and image payload")
+      }
+      let inflight = try await store.restoreInflightSubmissions(sessionID: nil)
+      check(inflight.count == 1 && inflight.first?.document == document && inflight.first?.images == [image]
+        && !StorageContractURLProtocol.capturedMethods.contains(where: { $0 == "session/prompt" || $0 == "session/command" }),
+        "inflight-only recovery retains its uncertain identity, metadata and attachment bytes")
+      await model.shutdown()
+    } catch { check(false, "inflight-only recovery contract: \(error)") }
+  }
 }
 
 @MainActor
