@@ -8594,6 +8594,8 @@ private final class NativeWikiFeed: ObservableObject {
   @Published private(set) var ingestError: String?
   @Published private(set) var reviewBusy: Bool
   @Published private(set) var reviewError: String?
+  @Published private(set) var researchBusy: Bool
+  @Published private(set) var researchReady: Bool
   @Published private(set) var operationError: String?
   @Published private(set) var searchPaths: Set<String>
   @Published private(set) var searchMode: String
@@ -8621,6 +8623,8 @@ private final class NativeWikiFeed: ObservableObject {
     ingestError = model.wikiIngestError
     reviewBusy = model.wikiReviewBusy
     reviewError = model.wikiReviewError
+    researchBusy = model.wikiResearchBusy
+    researchReady = model.wikiResearchReady
     operationError = model.knowledgeErrorMessage
     searchPaths = model.knowledgeSearchPaths
     searchMode = model.knowledgeSearchMode
@@ -8667,6 +8671,12 @@ private final class NativeWikiFeed: ObservableObject {
       .store(in: &cancellables)
     model.$wikiReviewError.removeDuplicates()
       .sink { [weak self] in self?.reviewError = $0 }
+      .store(in: &cancellables)
+    model.$knowledgeResearchOperationID.map { $0 != nil }.removeDuplicates()
+      .sink { [weak self] in self?.researchBusy = $0 }
+      .store(in: &cancellables)
+    model.$knowledgeResearchRequestTimeout.map { $0 != nil }.removeDuplicates()
+      .sink { [weak self] in self?.researchReady = $0 }
       .store(in: &cancellables)
     model.$knowledgeErrorMessage.removeDuplicates()
       .sink { [weak self] in self?.operationError = $0 }
@@ -8871,7 +8881,8 @@ private struct NativeWikiView: View, Equatable {
           )
           .equatable()
           Divider().overlay(ArkPalette.border)
-          NativeResearchBar(model: model, topic: $researchTopic, language: feed.language)
+          NativeResearchBar(model: model, topic: $researchTopic, busy: feed.researchBusy,
+            ready: feed.researchReady, language: feed.language)
         }
         Divider().overlay(ArkPalette.border)
         NativeWikiDetail(
@@ -9078,6 +9089,8 @@ private struct NativeWikiView: View, Equatable {
 private struct NativeResearchBar: View {
   let model: ArkAppModel
   @Binding var topic: String
+  let busy: Bool
+  let ready: Bool
   let language: ArkLanguagePreference
 
   var body: some View {
@@ -9087,11 +9100,23 @@ private struct NativeResearchBar: View {
       TextField(ArkL10n.text(.wikiResearchPlaceholder, language), text: $topic)
         .textFieldStyle(.roundedBorder)
         .onSubmit { model.runDeepResearch(topic: topic) }
-      Button(ArkL10n.text(.wikiStart, language)) {
+        .disabled(busy)
+        .accessibilityIdentifier("ark.wiki.research.topic")
+      if busy { ProgressView().controlSize(.small) }
+      Button(ready ? ArkL10n.text(.wikiStart, language)
+        : (language == .zh ? "研究未就绪" : "Research unavailable")) {
         model.runDeepResearch(topic: topic)
       }
         .buttonStyle(.borderedProminent)
-        .disabled(topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(busy || !ready || topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .accessibilityIdentifier("ark.wiki.research.start")
+      if busy {
+        Button(ArkL10n.text(.wikiCancel, language)) {
+          Task { await model.cancelDeepResearch() }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("ark.wiki.research.cancel")
+      }
     }
     .padding(.horizontal, 12)
     .frame(height: 54)

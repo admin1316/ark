@@ -154,7 +154,7 @@ kind: "package-reference"
 这些限制说明提供方在哪些情况下昂贵或不完整。它们是当前包约束。
 
 - **一次搜索消耗一个完整的 Messages 模型轮次**——产生延迟与生成 token，最多执行 `maxUses` 次服务端搜索；DeepSeek 不公开专用检索端点。
-- **动态凭据的可用性在操作内部解析**——同步可用性检查可以确认解析器存在，但无法查询异步凭据存储，因此选中的无密钥提供方会使搜索以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败；稳定的 `web_search` schema 仍保持注册。
+- **动态凭据的可用性在本地核对**——同步选择可以确认解析器存在；`await ctx.web.assertSearchAvailable(signal)` 还会解析本地凭据，在消费方开始付费扩展前拒绝缺失的密钥。每次搜索仍重新解析凭据，因此后续轮换或移除继续生效；稳定的 `web_search` schema 仍保持注册。
 - **超量返回的来源仍消耗 token**——协议没有结果数量旋钮，`maxResults` 只能由服务在事后截断。
 - **未引用的结果没有 `snippet`**——只有当文本块引用（`cited_text`）匹配其 URL 时，来源才会获得 snippet。
 

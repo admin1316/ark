@@ -569,6 +569,17 @@ public enum ArkDomainAPIContract {
     )
   }
 
+  /// Convert the Host's complete-operation budget into a bounded transport
+  /// deadline with thirty seconds for cancellation cleanup and delivery.
+  public static func knowledgeResearchTimeout(from value: JSONValue) throws -> TimeInterval {
+    guard let milliseconds = value["researchTimeoutMs"]?.numberValue,
+      milliseconds.isFinite, milliseconds >= 1, milliseconds <= 3_600_000,
+      milliseconds.rounded(.towardZero) == milliseconds else {
+      throw invalidResponse("knowledgeWiki/projectStatus researchTimeoutMs")
+    }
+    return milliseconds / 1000 + 30
+  }
+
   public static func knowledgeReviews(from value: JSONValue) throws -> [ArkKnowledgeReviewItem] {
     guard let rows = value.arrayValue else { throw invalidResponse("knowledgeWiki/reviews") }
     return try rows.map(knowledgeReview(from:))
@@ -947,12 +958,13 @@ extension ArkAPIClient {
   public func knowledgeCall(
     projectContext: String,
     method: String,
-    args: [String: JSONValue] = [:]
+    args: [String: JSONValue] = [:],
+    timeout: TimeInterval? = nil
   ) async throws -> JSONValue {
     guard !projectContext.isEmpty else { throw ArkAPIError(message: "知识项目尚未就绪，请重新载入") }
     var request = args["request"]?.objectValue ?? [:]
     request["projectContext"] = .string(projectContext)
-    return try await remoteCall(method: method, args: ["request": .object(request)])
+    return try await remoteCall(method: method, args: ["request": .object(request)], timeout: timeout)
   }
 
   /// Run hybrid search over the active native knowledge project.
@@ -1006,10 +1018,16 @@ extension ArkAPIClient {
   }
 
   /// Run the Host-owned deep-research pipeline and return its Candidate pages.
-  public func runDeepResearch(projectContext: String, topic: String) async throws -> ArkKnowledgeResearchResult {
+  public func runDeepResearch(
+    projectContext: String,
+    topic: String,
+    timeout: TimeInterval
+  ) async throws -> ArkKnowledgeResearchResult {
+    let requestTimeout = try researchRequestTimeout(timeout)
     let value = try await knowledgeCall(projectContext: projectContext,
       method: ArkDomainAPIContract.Method.knowledgeDeepResearch,
-      args: ["request": .object(["topic": .string(topic)])]
+      args: ["request": .object(["topic": .string(topic)])],
+      timeout: requestTimeout
     )
     return try ArkDomainAPIContract.knowledgeResearch(from: value)
   }

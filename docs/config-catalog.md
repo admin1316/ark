@@ -1051,10 +1051,22 @@ export interface Config {
   readonly embeddingTimeoutMs: number
   /** Enable the owned file worker and existing LLM/web provider dispatch. */
   readonly ownedStageExecutor: boolean
+  /** Maximum admitted pending/running tasks across restored projects. */
+  readonly ingestMaxActiveTasks: number
+  /** Maximum inputs in one manual enqueue request. */
+  readonly ingestMaxBatchInputs: number
+  /** Maximum terminal tasks retained per project. */
+  readonly ingestHistoryLimit: number
+  /** Maximum serialized bytes in each queue or source-disposition file. */
+  readonly ingestStateMaxBytes: number
+  /** Maximum simultaneous research operations across projects; duplicates share one. */
+  readonly researchConcurrency: number
+  /** Total research deadline including provider preflight and cancellation-aware stages. */
+  readonly researchTimeoutMs: number
 }
 ```
 
-Source: [`packages/host/knowledge-wiki/src/index.ts:121`](../packages/host/knowledge-wiki/src/index.ts)
+Source: [`packages/host/knowledge-wiki/src/index.ts:131`](../packages/host/knowledge-wiki/src/index.ts)
 
 <a id="deepseek-aidsh-llm"></a>
 

@@ -103,6 +103,8 @@ export interface WebSearchProvider {
   readonly id: string
   /** Cheap local usability check; must not make network calls. */
   available(): boolean
+  /** Resolve deferred local credentials before a consumer starts paid work; never dispatch a request. */
+  preflight?(signal?: AbortSignal): Promise<void>
   /** Run one search; honor `signal` for cancellation. */
   search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>
 }

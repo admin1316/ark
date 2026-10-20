@@ -65,6 +65,29 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('DeepSeek local credential preflight', () => {
+  it('rejects an empty deferred credential without making a network request', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const provider = searchProvider({ ...options, apiKey: '', resolveApiKey: async () => undefined })
+    expect(provider.available()).toBe(true)
+    await expect(provider.preflight()).rejects.toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pending credential lookup without dispatching search', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const provider = searchProvider({ ...options, apiKey: '', resolveApiKey: () => new Promise(() => {}) })
+    const controller = new AbortController()
+    const checking = provider.preflight(controller.signal)
+    const reason = new Error('synthetic cancelled credential lookup')
+    controller.abort(reason)
+    await expect(checking).rejects.toMatchObject({ code: 'WEB_ABORTED', cause: reason })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
 describe('citationSnippets', () => {
   it('maps url → cited_text from text blocks, first occurrence wins', () => {
     const map = citationSnippets([

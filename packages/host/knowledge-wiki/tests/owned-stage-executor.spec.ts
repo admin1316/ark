@@ -7,6 +7,7 @@ import WebRuntime from '@deepseek-ai/dsh-web'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOwnedStageExecutor } from '../src/owned-stage-executor.ts'
 import { executeKnowledgeWikiStage } from '../src/stage-executor.ts'
+import { deepResearch } from '../src/research.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -82,12 +83,30 @@ describe('owned knowledge stages and provider ownership', () => {
   })
   it('preflights and dispatches search through the existing web owner', async () => {
     const { executor, ctx } = await harness()
-    expect(() => executor.assertSearchAvailable?.()).toThrow('provider')
+    await expect(executor.assertSearchAvailable?.()).rejects.toThrow('provider')
     const search = vi.fn(async () => ({ sources: [{ url: 'https://source.fixture.test', title: 'source' }], truncated: false }))
     ctx.web.registerSearchProvider({ id: 'fixture-search', available: () => true, search })
-    expect(() => executor.assertSearchAvailable?.()).not.toThrow()
+    await expect(executor.assertSearchAvailable?.()).resolves.toBeUndefined()
     const signal = new AbortController().signal
     await expect(executor.execute({ kind: 'web-search', query: 'question', maxResults: 2, timeoutMs: 1000 }, signal)).resolves.toEqual({ text: null, sources: [{ url: 'https://source.fixture.test', title: 'source' }] })
     expect(search).toHaveBeenCalledWith({ query: 'question', maxResults: 2 }, signal)
+  })
+  it('awaits deferred search credentials before preparing or expanding research', async () => {
+    const { executor, ctx } = await harness()
+    const prepare = vi.spyOn(ctx.llm, 'prepareCall')
+    const search = vi.fn()
+    const preflight = vi.fn(async () => {
+      await Promise.resolve()
+      throw new Error('synthetic search credential missing')
+    })
+    ctx.web.registerSearchProvider({ id: 'deferred-credential', available: () => true, preflight, search })
+    const root = mkdtempSync(join(tmpdir(), 'owned-knowledge-preflight-'))
+    roots.push(root)
+    const signal = new AbortController().signal
+    await expect(deepResearch(executor, 'fixture-provider', 'fixture-model', root, 'topic', signal))
+      .rejects.toThrow('synthetic search credential missing')
+    expect(preflight).toHaveBeenCalledWith(signal)
+    expect(prepare).not.toHaveBeenCalled()
+    expect(search).not.toHaveBeenCalled()
   })
 })

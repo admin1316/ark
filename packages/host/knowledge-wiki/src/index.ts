@@ -19,7 +19,7 @@ import { ingestSource as runIngest } from './ingest.ts'
 import { createOwnedStageExecutor } from './owned-stage-executor.ts'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { knowledgeConnectionFields, knowledgeConnectionSchema, validateKnowledgeConnections, type KnowledgeConnections } from './connections.ts'
-import type { WikiProjectRequest, WikiProjectRegistry, KnowledgeResearchResult, KnowledgeProjectContextId } from './types.ts'
+import type { WikiProjectRequest, WikiProjectRegistry, KnowledgeResearchResult, KnowledgeProjectContextId, KnowledgeIngestAdmissionId } from './types.ts'
 import {
   sedimentTarget, extractConversationText, buildSessionSummaryPage,
 } from './auto-sediment.ts'
@@ -67,6 +67,16 @@ import type {
 } from './types.ts'
 
 const MAX_RAW_SOURCE_BYTES = 100 * 1024 * 1024
+
+class KnowledgeResearchTimeoutError extends Error {
+  constructor(timeoutMs: number) { super(`knowledge research timed out after ${timeoutMs}ms`) }
+}
+
+type SourceDisposition = string | { cancelledHash: string; admissionId?: string } | { retryAfter: number }
+
+function normalizeIngestInput(input: string): string {
+  return input.replace(/^\/+/u, '').replace(/^raw\/sources\//u, '')
+}
 
 export type * from './types.ts'
 export type {
@@ -143,6 +153,18 @@ export interface Config {
   readonly embeddingTimeoutMs: number
   /** Enable the owned file worker and existing LLM/web provider dispatch. */
   readonly ownedStageExecutor: boolean
+  /** Maximum admitted pending/running tasks across restored projects. */
+  readonly ingestMaxActiveTasks: number
+  /** Maximum inputs in one manual enqueue request. */
+  readonly ingestMaxBatchInputs: number
+  /** Maximum terminal tasks retained per project. */
+  readonly ingestHistoryLimit: number
+  /** Maximum serialized bytes in each queue or source-disposition file. */
+  readonly ingestStateMaxBytes: number
+  /** Maximum simultaneous research operations across projects; duplicates share one. */
+  readonly researchConcurrency: number
+  /** Total research deadline including provider preflight and cancellation-aware stages. */
+  readonly researchTimeoutMs: number
 }
 
 /**
@@ -169,6 +191,12 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     ownedStageExecutor: s.boolean().default(false),
     llmProvider: knowledgeConnectionFields.textProvider,
     llmModel: knowledgeConnectionFields.textModel,
+    ingestMaxActiveTasks: s.number().min(1).max(10_000).step(1).default(64),
+    ingestMaxBatchInputs: s.number().min(1).max(10_000).step(1).default(64),
+    ingestHistoryLimit: s.number().min(0).max(10_000).step(1).default(128),
+    ingestStateMaxBytes: s.number().min(4096).max(64 * 1024 * 1024).step(1).default(5 * 1024 * 1024),
+    researchConcurrency: s.number().min(1).max(32).step(1).default(2),
+    researchTimeoutMs: s.number().min(1).max(3_600_000).step(1).default(600_000),
   })
 
   private readonly embeddingTimeoutMs: number
@@ -190,6 +218,13 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private readonly stageOperations = new Set<Promise<unknown>>()
   private queueNextId = 1
   private projectGeneration = 0
+  private readonly taskWaiters = new Map<string, Set<(task: IngestQueueTask) => void>>()
+  private readonly researchOperations = new Map<string, {
+    controller: AbortController
+    promise: Promise<KnowledgeResearchResult>
+    subscribers: number
+  }>()
+  private readonly limits: Pick<Config, 'ingestMaxActiveTasks' | 'ingestMaxBatchInputs' | 'ingestHistoryLimit' | 'ingestStateMaxBytes' | 'researchConcurrency' | 'researchTimeoutMs'>
 
   /**
    * @param ctx - Host context.
@@ -197,6 +232,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'knowledgeWiki')
+    this.limits = config
+    if (config.ingestMaxActiveTasks * 512 >= config.ingestStateMaxBytes) throw new Error('knowledge-wiki: ingestStateMaxBytes must reserve more than 512 bytes per active task')
     this.wikiRoot = config.wikiRoot.replace(/\/+$/u, '')
     const parent = dirname(this.wikiRoot)
     this.mainRoot = config.mainRoot.replace(/\/+$/u, '') || parent
@@ -280,7 +317,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   private trackStageExecutor(executor: KnowledgeWikiStageExecutor): KnowledgeWikiStageExecutor {
     return {
       isolation: executor.isolation,
-      ...executor.assertSearchAvailable === undefined ? {} : { assertSearchAvailable: () => executor.assertSearchAvailable?.() },
+      ...executor.assertSearchAvailable === undefined ? {} : {
+        assertSearchAvailable: (signal?: AbortSignal) => executor.assertSearchAvailable?.(signal),
+      },
       ...executor.prepareOperation === undefined ? {} : {
         prepareOperation: async (route: { provider: string; model: string; modelCalls: number }, signal: AbortSignal) =>
           this.trackStageExecutor(await (executor.prepareOperation as NonNullable<KnowledgeWikiStageExecutor['prepareOperation']>)(
@@ -331,14 +370,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         this.activeIngest?.controller.abort(new Error('knowledge-wiki disposed'))
         for (const controller of this.backgroundStages) controller.abort(new Error('knowledge-wiki disposed'))
         await Promise.allSettled([...this.stageOperations, ...this.queueDrain === undefined ? [] : [this.queueDrain]])
+        this.settleStoppedWaiters()
         this.snapshots.dispose()
       }, 'knowledge-wiki: operation owner')
       const dispose = this.ctx.timer.interval(() => {
         if (this.lifetime.signal.aborted) return
-        void this.scanSources()
+        void this.scanSources().catch((error: unknown) => { this.ctx.logger.warn('knowledge source scan failed', error) })
         // Drain independently of scan: restored pending tasks survive a
         // restart only when the timer drains them without a cache change.
-        void this.drainQueue()
+        this.startQueueDrain()
       }, 60_000)
       this.ctx.effect(() => dispose, 'knowledge-wiki: source auto-watch')
       // Turn-level Markdown is intentionally disabled. The session event log is
@@ -477,9 +517,11 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /** Restore resumable tasks and cancelled-source tombstones. */
   private restoreQueue(projectRoot = this.currentRoot): void {
     if (this.restoredQueueRoots.has(projectRoot)) return
+    const before = [...this.queue]
+    const nextId = this.queueNextId
     try {
       const parsed = JSON.parse(
-        readRegularFileBounded(this.queueFile(projectRoot), 5 * 1024 * 1024).toString('utf8'),
+        readRegularFileBounded(this.queueFile(projectRoot), this.limits.ingestStateMaxBytes).toString('utf8'),
       ) as unknown
       if (!Array.isArray(parsed)) throw new Error('invalid knowledge ingest queue state')
       const context = createProjectExecutionContext(projectRoot, this.mainRoot, this.wikiRoot, this.projectGeneration)
@@ -488,12 +530,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         const task = value as Partial<IngestQueueTask>
         if (typeof task.input !== 'string'
           || !['pending', 'running', 'done', 'error', 'cancelled'].includes(task.status ?? '')) continue
+        const input = normalizeIngestInput(task.input)
         const id = typeof task.id === 'number' ? task.id : this.queueNextId
-        if (this.queue.some(item => item.projectRoot === projectRoot && item.input === task.input
-          && (item.status === 'pending' || item.status === 'running' || item.status === 'cancelled'))) continue
-        this.queue.push({
+        if (!Number.isSafeInteger(id) || id < 1 || this.queue.some(row => row.projectRoot === projectRoot && row.id === id)) throw new Error('invalid or duplicate knowledge ingest task identity')
+        if (this.queue.some(item => item.projectRoot === projectRoot && item.input === input
+          && (item.status === 'pending' || item.status === 'running' || task.status === 'cancelled' && item.status === 'cancelled'))) continue
+        const restored: IngestQueueTask = {
           id,
-          input: task.input,
+          input,
+          ...typeof task.admissionId === 'string' ? { admissionId: task.admissionId } : {},
           projectRoot,
           wikiRoot: context.wikiRoot,
           projectGeneration: typeof task.projectGeneration === 'number'
@@ -510,24 +555,112 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           ...(typeof task.cancelRequestedAt === 'number' ? { cancelRequestedAt: task.cancelRequestedAt } : {}),
           ...(typeof task.runId === 'string' ? { runId: task.runId } : {}),
           ...(typeof task.leaseStartedAt === 'number' ? { leaseStartedAt: task.leaseStartedAt } : {}),
-        })
+        }
+        this.queue.push(restored.status === 'pending' ? this.resumableTask(restored) : restored)
         this.queueNextId = Math.max(this.queueNextId, id + 1)
       }
+      const cache = this.readCache(projectRoot)
+      const restoredHistory = this.queue.filter(row => row.projectRoot === projectRoot)
+        .sort((a, b) => (b.completedAt ?? b.createdAt) - (a.completedAt ?? a.createdAt) || b.id - a.id)
+      for (const task of restoredHistory) {
+        if (cache[task.input] !== undefined) continue
+        if (task.status === 'done' && task.ingestedHash !== undefined) cache[task.input] = task.ingestedHash
+        if (task.status === 'cancelled' && task.ingestedHash !== undefined) cache[task.input] = { cancelledHash: task.ingestedHash, ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+        if (task.status === 'error' && task.failedAt !== undefined) cache[task.input] = { retryAfter: task.failedAt + KnowledgeWikiService.FAILED_RETRY_MS }
+      }
+      for (let index = 0; index < this.queue.length; index++) {
+        const task = this.taskAt(index)
+        const disposition = cache[task.input]
+        if (task.projectRoot === projectRoot && task.status === 'pending' && typeof disposition === 'object' && 'cancelledHash' in disposition
+          && (disposition.admissionId === undefined || disposition.admissionId === task.admissionId)
+          && disposition.cancelledHash === this.currentHash(task.input, projectRoot)) {
+          this.queue[index] = { ...task, status: 'cancelled', ingestedHash: disposition.cancelledHash, completedAt: Date.now() }
+        }
+      }
+      if (this.queue.filter(task => task.status === 'pending' || task.status === 'running').length > this.limits.ingestMaxActiveTasks) throw new Error('knowledge ingest queue exceeds ingestMaxActiveTasks; increase the deployment capacity before restoring')
+      const active = this.queue.filter(task => task.projectRoot === projectRoot && (task.status === 'pending' || task.status === 'running'))
+      this.requireStateFits(active, active.filter(task => task.status === 'pending').length * 512)
+      const reserved = { ...cache }
+      for (const task of active) reserved[task.input] = { cancelledHash: 'f'.repeat(64), ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+      this.requireStateFits(reserved)
+      if (Object.keys(cache).length > 0) this.writeCache(cache, projectRoot)
+      this.persistQueue(projectRoot)
       this.restoredQueueRoots.add(projectRoot)
     } catch (error) {
+      this.queue.splice(0, this.queue.length, ...before)
+      this.queueNextId = nextId
       if (!isMissingPathError(error)) throw error
       this.restoredQueueRoots.add(projectRoot)
     }
   }
 
-  /** Persist resumable tasks and cancelled-source tombstones. */
+  private encodeState(value: unknown): string {
+    return `${JSON.stringify(value, null, 2)}\n`
+  }
+
+  private requireStateFits(value: unknown, reserve = 0): string {
+    const encoded = this.encodeState(value)
+    if (Buffer.byteLength(encoded) + reserve > this.limits.ingestStateMaxBytes) {
+      throw new Error('knowledge ingest state capacity exceeded; reduce the batch or increase ingestStateMaxBytes')
+    }
+    return encoded
+  }
+
+  /** Keep active work and a bounded terminal history; source dispositions own replay suppression. */
   private persistQueue(projectRoot?: string): void {
-    const roots = projectRoot === undefined
-      ? new Set(this.queue.map(task => task.projectRoot))
-      : new Set([projectRoot])
+    const roots = projectRoot === undefined ? new Set(this.queue.map(task => task.projectRoot)) : new Set([projectRoot])
     for (const root of roots) {
-      const durable = this.queue.filter(task => task.projectRoot === root)
-      atomicWriteFile(this.queueFile(root), `${JSON.stringify(durable, null, 2)}\n`)
+      const active = this.queue.filter(task => task.projectRoot === root && (task.status === 'pending' || task.status === 'running'))
+      const history = this.queue.filter(task => task.projectRoot === root && task.status !== 'pending' && task.status !== 'running')
+        .sort((a, b) => (a.completedAt ?? a.createdAt) - (b.completedAt ?? b.createdAt) || a.id - b.id)
+        .slice(-this.limits.ingestHistoryLimit)
+      if (this.limits.ingestHistoryLimit === 0) history.length = 0
+      const reserve = active.filter(task => task.status === 'pending').length * 512
+      while (history.length > 0
+        && Buffer.byteLength(this.encodeState([...active, ...history])) + reserve > this.limits.ingestStateMaxBytes) history.shift()
+      const retained = [...active, ...history]
+      const encoded = this.requireStateFits(retained, reserve)
+      atomicWriteFile(this.queueFile(root), encoded)
+      const keys = new Set(retained.map(task => this.taskKey(task)))
+      for (let index = this.queue.length - 1; index >= 0; index--) {
+        const task = this.taskAt(index)
+        if (task.projectRoot === root && !keys.has(this.taskKey(task))) this.queue.splice(index, 1)
+      }
+    }
+  }
+
+  private taskAt(index: number): IngestQueueTask {
+    const task = this.queue[index]
+    if (task === undefined) throw new Error('knowledge ingest task identity was lost')
+    return task
+  }
+
+  private serviceStopped(): boolean {
+    return this.lifetime.signal.aborted
+  }
+
+  private resumableTask(task: IngestQueueTask): IngestQueueTask {
+    return {
+      id: task.id, input: task.input, projectRoot: task.projectRoot, wikiRoot: task.wikiRoot,
+      projectGeneration: task.projectGeneration, createdAt: task.createdAt, status: 'pending',
+      ...task.admissionId === undefined ? {} : { admissionId: task.admissionId },
+    }
+  }
+
+  private taskKey(task: Pick<IngestQueueTask, 'projectRoot' | 'id'>): string {
+    return JSON.stringify([task.projectRoot, task.id])
+  }
+
+  private settleTask(task: IngestQueueTask): void {
+    const key = this.taskKey(task)
+    const waiters = this.taskWaiters.get(key)
+    this.taskWaiters.delete(key)
+    for (const settle of waiters ?? []) settle(task)
+  }
+
+  private settleStoppedWaiters(error = 'knowledge-wiki disposed'): void {
+    for (const task of this.queue) {
+      if (this.taskWaiters.has(this.taskKey(task))) this.settleTask({ ...task, status: 'error', error })
     }
   }
 
@@ -546,14 +679,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     input: string,
     force = false,
     context = this.captureProjectContext(),
+    persist = true,
   ): boolean {
-    const normalized = input
-      .replace(/^\/+/u, '')
-      // Tasks are keyed by their cache-relative identity (relative to
-      // raw/sources), so a project-relative caller input (raw/sources/…)
-      // and the scanner's bare rel enqueue the same task; URLs pass
-      // through untouched.
-      .replace(/^raw\/sources\//u, '')
+    this.lifetime.signal.throwIfAborted()
+    const normalized = normalizeIngestInput(input)
+    const disposition = this.readCache(context.projectRoot)[normalized]
+    if (typeof disposition === 'object') {
+      if ('retryAfter' in disposition && Date.now() < disposition.retryAfter) return false
+      if (!force && 'cancelledHash' in disposition && disposition.cancelledHash === this.currentHash(normalized, context.projectRoot)) return false
+    }
     const existing = this.queue.findLast(
       task => task.projectRoot === context.projectRoot && task.input === normalized,
     )
@@ -580,16 +714,24 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         }
       }
     }
-    this.queue.push({
+    if (this.queue.filter(task => task.status === 'pending' || task.status === 'running').length >= this.limits.ingestMaxActiveTasks) throw new Error('knowledge ingest queue is busy; active task capacity reached')
+    const next: IngestQueueTask = {
       id: this.queueNextId++,
+      admissionId: randomUUID() as KnowledgeIngestAdmissionId,
       input: normalized,
       projectRoot: context.projectRoot,
       wikiRoot: context.wikiRoot,
       projectGeneration: context.generation,
       createdAt: Date.now(),
       status: 'pending',
-    })
-    this.persistQueue(context.projectRoot)
+    }
+    const active = [...this.queue.filter(task => task.projectRoot === context.projectRoot && (task.status === 'pending' || task.status === 'running')), next]
+    this.requireStateFits(active, active.filter(task => task.status === 'pending').length * 512)
+    const reservedCache = { ...this.readCache(context.projectRoot) }
+    for (const task of active) reservedCache[task.input] = { cancelledHash: 'f'.repeat(64), ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+    this.requireStateFits(reservedCache)
+    this.queue.push(next)
+    if (persist) this.persistQueue(context.projectRoot)
     return true
   }
 
@@ -605,12 +747,28 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return join(projectRoot, '.llm-wiki', 'ingest-cache.json')
   }
 
-  private readCache(projectRoot = this.currentRoot): Record<string, string> {
-    return readOptionalJson(this.cacheFile(projectRoot), {})
+  private readCache(projectRoot = this.currentRoot): Record<string, SourceDisposition> {
+    try {
+      const parsed: unknown = JSON.parse(readRegularFileBounded(this.cacheFile(projectRoot), this.limits.ingestStateMaxBytes).toString('utf8'))
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('invalid knowledge source disposition state')
+      for (const value of Object.values(parsed) as unknown[]) {
+        if (typeof value === 'string') continue
+        if (typeof value !== 'object' || value === null) throw new Error('invalid knowledge source disposition')
+        if ('cancelledHash' in value && typeof value.cancelledHash === 'string' && (!('admissionId' in value) || typeof value.admissionId === 'string')) continue
+        if ('retryAfter' in value && typeof value.retryAfter === 'number' && Number.isFinite(value.retryAfter)) continue
+        throw new Error('invalid knowledge source disposition')
+      }
+      return parsed as Record<string, SourceDisposition>
+    } catch (error) {
+      if (isMissingPathError(error)) return {}
+      throw error
+    }
   }
 
-  private writeCache(cache: Record<string, string>, projectRoot = this.currentRoot): void {
-    atomicWriteFile(this.cacheFile(projectRoot), `${JSON.stringify(cache, null, 2)}\n`)
+  private writeCache(cache: ReturnType<KnowledgeWikiService['readCache']>, projectRoot = this.currentRoot): void {
+    const retained = Object.fromEntries(Object.entries(cache).filter(([, value]) =>
+      typeof value !== 'object' || !('retryAfter' in value) || value.retryAfter > Date.now()))
+    atomicWriteFile(this.cacheFile(projectRoot), this.requireStateFits(retained))
   }
 
   private sha256(value: string | Buffer): string {
@@ -656,12 +814,16 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     return promiseFromSync(() => {
       const context = this.captureProjectContext()
       const cache = this.readCache(context.projectRoot)
-      for (const rel of this.listRawSources(context.projectRoot)) {
-        const source = resolveRawSourcePath(context.projectRoot, rel)
-        const hash = this.sha256(readRegularFileBounded(source, MAX_RAW_SOURCE_BYTES))
-        if (cache[rel] === hash) continue
-        this.enqueueIngest(rel, false, context)
-      }
+      try {
+        for (const rel of this.listRawSources(context.projectRoot)) {
+          if (this.queue.filter(task => task.status === 'pending' || task.status === 'running').length >= this.limits.ingestMaxActiveTasks) break
+          const source = resolveRawSourcePath(context.projectRoot, rel)
+          const hash = this.sha256(readRegularFileBounded(source, MAX_RAW_SOURCE_BYTES))
+          const disposition = cache[rel]
+          if (disposition === hash || typeof disposition === 'object' && 'cancelledHash' in disposition && disposition.cancelledHash === hash) continue
+          this.enqueueIngest(rel, false, context, false)
+        }
+      } finally { this.persistQueue(context.projectRoot) }
     })
   }
 
@@ -745,7 +907,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   /**
    * Describe independently configured knowledge routes without exposing credentials.
    * @param request - Registered project identity.
-   * @returns Local keyword/hybrid mode and route configuration flags.
+   * @returns Local keyword/hybrid mode, route configuration flags, and the complete research deadline.
    */
   @Remote('projectStatus')
   projectStatus(request: WikiProjectRequest): Promise<{
@@ -753,6 +915,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     textConfigured: boolean
     visionConfigured: boolean
     embeddingConfigured: boolean
+    researchTimeoutMs: number
   }> {
     return promiseFromSync(() => {
       this.resolveProjectContext(request.projectContext)
@@ -761,6 +924,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         searchMode: config.embeddingProvider === '' ? 'keyword' : 'hybrid',
         textConfigured: config.textProvider !== '', visionConfigured: config.visionProvider !== '',
         embeddingConfigured: config.embeddingProvider !== '',
+        researchTimeoutMs: this.limits.researchTimeoutMs,
       }
     })
   }
@@ -1071,11 +1235,16 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   ingestQueueAdd(request: WikiProjectRequest & { inputs: string[] }): Promise<IngestQueueSnapshot> {
     return promiseFromSync(() => {
       const context = this.resolveProjectContext(request.projectContext)
-      for (const input of request.inputs) {
-        // Manual enqueue may re-run a done task; the scanner path never does.
-        this.enqueueIngest(input, true, context)
+      if (request.inputs.length > this.limits.ingestMaxBatchInputs) throw new Error('knowledge ingest batch exceeds ingestMaxBatchInputs')
+      const previous = [...this.queue]
+      try {
+        for (const input of request.inputs) this.enqueueIngest(input, true, context, false)
+        this.persistQueue(context.projectRoot)
+      } catch (error) {
+        this.queue.splice(0, this.queue.length, ...previous)
+        throw error
       }
-      void this.drainQueue()
+      this.startQueueDrain()
       return this.queueSnapshot(context.projectRoot)
     })
   }
@@ -1092,7 +1261,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   }
 
   /**
-   * Provides the ingest queue cancel operation.
+   * Cancel pending tasks only; the current owned execution continues safely.
    * @param request - Host-issued registered project identity.
    * @returns The current ingest queue snapshot after cancellation.
    */
@@ -1100,32 +1269,31 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   ingestQueueCancel(request: WikiProjectRequest): Promise<IngestQueueSnapshot> {
     return promiseFromSync(() => {
       const context = this.resolveProjectContext(request.projectContext)
-      this.cancelPendingForRoot(context.projectRoot)
+      this.cancelPendingForRoot(context.projectRoot, true)
       return this.queueSnapshot(context.projectRoot)
     })
   }
 
-  private cancelPendingForRoot(projectRoot: string): boolean {
+  private cancelPendingForRoot(projectRoot: string, userRequested = false): boolean {
     let changed = false
     for (let index = 0; index < this.queue.length; index += 1) {
-      const task = this.queue[index]
-      if (task === undefined || task.projectRoot !== projectRoot) continue
-      if (task.status === 'running' && this.activeIngest?.taskId === task.id) {
-        const cancelRequestedAt = Date.now()
-        this.queue[index] = { ...task, cancelRequestedAt }
-        this.activeIngest.controller.abort(new Error('knowledge-wiki ingest cancelled'))
-        changed = true
-        continue
-      }
+      const task = this.taskAt(index)
+      if (task.projectRoot !== projectRoot) continue
       if (task.status !== 'pending') continue
-      const ingestedHash = this.currentHash(task.input, task.projectRoot)
+      const ingestedHash = userRequested ? this.currentHash(task.input, task.projectRoot) : undefined
+      if (ingestedHash !== undefined) {
+        const cache = this.readCache(projectRoot)
+        cache[task.input] = { cancelledHash: ingestedHash, ...task.admissionId === undefined ? {} : { admissionId: task.admissionId } }
+        this.writeCache(cache, projectRoot)
+      }
       this.queue[index] = {
         ...task,
         status: 'cancelled',
-        cancelRequestedAt: Date.now(),
+        ...userRequested ? { cancelRequestedAt: Date.now() } : {},
         completedAt: Date.now(),
         ...(ingestedHash === undefined ? {} : { ingestedHash }),
       }
+      this.settleTask(this.taskAt(index))
       changed = true
     }
     if (changed) this.persistQueue(projectRoot)
@@ -1160,19 +1328,32 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       : this.ingestSourceWithContext({ path: `raw/sources/${task.input}` }, context, signal)
   }
 
+  private startQueueDrain(): void {
+    void this.drainQueue().catch((error: unknown) => {
+      this.ctx.logger.warn('knowledge ingest queue failed', error)
+      this.settleStoppedWaiters(error instanceof Error ? error.message : String(error))
+    })
+  }
+
   private drainQueue(): Promise<void> {
     if (this.queueDrain !== undefined) return this.queueDrain
-    const drain = this.runQueue().finally(() => {
+    const drain = this.runQueue().then(() => {
       this.queueDrain = undefined
+      if (!this.lifetime.signal.aborted && this.queue.some(task => task.status === 'pending')) this.startQueueDrain()
+    }, (error: unknown) => {
+      this.queueDrain = undefined
+      throw error
     })
     this.queueDrain = drain
     return drain
   }
 
   private async runQueue(): Promise<void> {
-    for (const [index, task] of this.queue.entries()) {
-      if (this.lifetime.signal.aborted) break
-      if (task.status !== 'pending') continue
+    while (!this.lifetime.signal.aborted) {
+      const index = this.queue.findIndex(task => task.status === 'pending')
+      if (index < 0) break
+      const task = this.taskAt(index)
+      const currentIndex = (): number => this.queue.findIndex(row => this.taskKey(row) === this.taskKey(task))
       const controller = new AbortController()
       const running: IngestQueueTask = {
         ...task,
@@ -1180,24 +1361,27 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         runId: randomUUID(),
         leaseStartedAt: Date.now(),
       }
-      this.queue[index] = running
+      this.queue[currentIndex()] = running
       this.activeIngest = { taskId: task.id, controller }
-      this.persistQueue(running.projectRoot)
-      const timeoutState = { expired: false }
       const timeout = setTimeout(() => {
-        timeoutState.expired = true
         controller.abort(new Error('ingest timed out after 5 minutes'))
       }, 5 * 60 * 1000)
       const context = this.queueTaskContext(running)
       try {
+        this.persistQueue(running.projectRoot)
         const outcome = await this.executeQueuedIngest(running, context, controller.signal)
         controller.signal.throwIfAborted()
         if (outcome.written.length === 0 && outcome.warnings.length > 0) {
           throw new Error(outcome.warnings.join('; '))
         }
+        const remaining = this.queue.filter(row => row.projectRoot === running.projectRoot && this.taskKey(row) !== this.taskKey(running) && (row.status === 'pending' || row.status === 'running'))
+        try {
+          this.requireStateFits([...remaining, { ...running, status: 'done', written: outcome.written, warnings: outcome.warnings, completedAt: Date.now(), ingestedHash: 'f'.repeat(64) }], remaining.filter(task => task.status === 'pending').length * 512)
+        } catch {
+          throw new Error('knowledge ingest outcome exceeds ingestStateMaxBytes; generated files were preserved and the outcome was not committed')
+        }
         const ingestedHash = this.markIngested(running.input, context)
-        this.queue[index] = running
-        this.queue[index] = {
+        this.queue[currentIndex()] = {
           ...running,
           status: 'done',
           written: outcome.written,
@@ -1206,23 +1390,33 @@ export default class KnowledgeWikiService extends TypertRemoteService {
           ...(ingestedHash !== undefined ? { ingestedHash } : {}),
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        const current = this.queue[index]
-        const cancelledAt = !timeoutState.expired ? current.cancelRequestedAt : undefined
+        let message = error instanceof Error ? error.message : String(error)
+        const remaining = this.queue.filter(row => row.projectRoot === running.projectRoot && this.taskKey(row) !== this.taskKey(running) && (row.status === 'pending' || row.status === 'running'))
+        if (Buffer.byteLength(this.encodeState([...remaining, { ...running, status: 'error', error: message, completedAt: Date.now(), failedAt: Date.now() }])) + remaining.filter(task => task.status === 'pending').length * 512 > this.limits.ingestStateMaxBytes) {
+          message = 'knowledge ingest error exceeds ingestStateMaxBytes; generated files were preserved'
+        }
+        const stopped = this.serviceStopped()
+        const revoked = running.projectRoot !== this.mainRoot && !this.readWorkspaces().some(row => row.path === running.projectRoot)
         console.error('[knowledge-wiki] ingest failed:', running.input, message)
-        this.queue[index] = {
+        this.queue[currentIndex()] = {
           ...running,
-          status: cancelledAt !== undefined ? 'cancelled' : 'error',
+          status: stopped ? 'pending' : revoked ? 'cancelled' : 'error',
           error: message,
           completedAt: Date.now(),
-          ...(cancelledAt !== undefined
-            ? { cancelRequestedAt: cancelledAt }
-            : { failedAt: Date.now() }),
+          ...stopped || revoked ? {} : { failedAt: Date.now() },
+        }
+        if (stopped) this.queue[currentIndex()] = this.resumableTask(running)
+        if (this.taskAt(currentIndex()).status === 'error') {
+          const cache = this.readCache(context.projectRoot)
+          cache[running.input] = { retryAfter: Date.now() + KnowledgeWikiService.FAILED_RETRY_MS }
+          this.writeCache(cache, context.projectRoot)
         }
       } finally {
         clearTimeout(timeout)
         this.activeIngest = undefined
+        const terminal = this.taskAt(currentIndex())
         this.persistQueue(context.projectRoot)
+        if (terminal.status !== 'pending') this.settleTask(terminal)
       }
     }
   }
@@ -1233,11 +1427,18 @@ export default class KnowledgeWikiService extends TypertRemoteService {
   ): Promise<IngestOutcome> {
     this.enqueueIngest(input, true, context)
     const task = this.queue.findLast(item => item.projectRoot === context.projectRoot
-      && item.input === input.replace(/^\/+|^raw\/sources\//gu, ''))
+      && item.input === normalizeIngestInput(input))
     if (task === undefined) throw new Error('ingest task was not admitted')
-    await this.drainQueue()
-    const terminal = this.queue.find(item => item.id === task.id)
-    if (terminal?.status === 'done') {
+    const terminal = task.status === 'pending' || task.status === 'running'
+      ? await new Promise<IngestQueueTask>((resolve) => {
+        const key = this.taskKey(task)
+        const waiters = this.taskWaiters.get(key) ?? new Set()
+        waiters.add(resolve)
+        this.taskWaiters.set(key, waiters)
+        this.startQueueDrain()
+      })
+      : task
+    if (terminal.status === 'done') {
       // runQueue only marks a task done with both arrays attached.
       const warnings = terminal.warnings as string[]
       return {
@@ -1246,8 +1447,8 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         status: warnings.length > 0 ? 'degraded' : 'ok',
       }
     }
-    const error = terminal?.error ?? `ingest task ${task.id} did not complete`
-    const errorCode = terminal?.status === 'cancelled'
+    const error = terminal.error ?? `ingest task ${task.id} did not complete`
+    const errorCode = terminal.status === 'cancelled'
       ? 'cancelled'
       : error.includes('timed out') ? 'timeout' : 'ingest-failed'
     return { written: [], warnings: [error], status: 'error', errorCode }
@@ -1270,9 +1471,9 @@ export default class KnowledgeWikiService extends TypertRemoteService {
    * Expand a topic, search, and write research Candidates for the workspace captured at entry.
    * Written pages receive Candidate reviews and invalidate that workspace's cached snapshot.
    * @param request - Topic passed to query expansion and synthesis.
-   * @param signal - Cancels executor stages; pipeline cancellation/failure becomes a degraded result.
+   * @param signal - Detaches this subscriber; the final subscriber aborts the shared operation.
    * @returns Findings with project-relative paths and warnings; pipeline failures include an error code.
-   * @throws If recording Candidate reviews fails after the pipeline returns.
+   * @throws On subscriber cancellation or failure to record Candidate reviews.
    */
   @Remote('deepResearch')
   async deepResearch(
@@ -1280,13 +1481,64 @@ export default class KnowledgeWikiService extends TypertRemoteService {
     signal: AbortSignal,
   ): Promise<KnowledgeResearchResult> {
     const context = this.resolveProjectContext(request.projectContext)
-    signal = AbortSignal.any([signal, this.lifetime.signal, (this.projectLifetimes.get(request.projectContext) as AbortController).signal])
+    signal.throwIfAborted()
+    const topic = request.topic.trim().replace(/\s+/gu, ' ')
+    const route = Object.freeze({ ...this.connections() })
+    const revisions = this.ctx.get('settings')?.describe({ redactSecrets: true }).map(row => [row.ns, row.revision]) ?? []
+    const key = JSON.stringify([request.projectContext, topic, route.textProvider, route.textModel, revisions])
+    let operation = this.researchOperations.get(key)
+    if (operation === undefined) {
+      if (this.researchOperations.size >= this.limits.researchConcurrency) {
+        return { findings: [], sourceCount: 0, warnings: ['knowledge research is busy; operation capacity reached'], degraded: true, errorCode: 'research-failed' }
+      }
+      const controller = new AbortController()
+      const ownerSignal = AbortSignal.any([
+        controller.signal, this.lifetime.signal,
+        (this.projectLifetimes.get(request.projectContext) as AbortController).signal,
+      ])
+      const deadline = setTimeout(() => {
+        controller.abort(new KnowledgeResearchTimeoutError(this.limits.researchTimeoutMs))
+      }, this.limits.researchTimeoutMs)
+      const promise = Promise.resolve()
+        .then(() => this.runResearchOperation({ ...request, topic }, context, route, ownerSignal))
+        .finally(() => { clearTimeout(deadline) })
+      operation = { controller, promise, subscribers: 0 }
+      this.researchOperations.set(key, operation)
+      this.stageOperations.add(promise)
+      const release = (): void => { this.researchOperations.delete(key); this.stageOperations.delete(promise) }
+      void promise.then(release, release)
+    }
+    const owned = operation
+    owned.subscribers++
+    try {
+      return await new Promise<KnowledgeResearchResult>((resolve, reject) => {
+        const abort = (): void => { reject(signal.reason instanceof Error ? signal.reason : new Error('knowledge research subscriber cancelled')) }
+        signal.addEventListener('abort', abort, { once: true })
+        const release = (): void => { signal.removeEventListener('abort', abort) }
+        void owned.promise.then((value) => { release(); resolve(value) }, (error: unknown) => {
+          release()
+          reject(error instanceof Error ? error : new Error(String(error)))
+        })
+        if (signal.aborted) abort()
+      })
+    } finally {
+      owned.subscribers--
+      if (owned.subscribers === 0) owned.controller.abort(new Error('knowledge research has no remaining subscribers'))
+    }
+  }
+
+  private async runResearchOperation(
+    request: WikiProjectRequest & { topic: string },
+    context: ProjectExecutionContext,
+    route: KnowledgeConnections,
+    signal: AbortSignal,
+  ): Promise<KnowledgeResearchResult> {
     let result
     try {
       result = await runResearch(
         this.stageExecutor,
-        this.connections().textProvider,
-        this.connections().textModel,
+        route.textProvider,
+        route.textModel,
         context.projectRoot,
         request.topic,
         signal,
@@ -1298,7 +1550,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         sourceCount: 0,
         warnings: [message],
         degraded: true,
-        errorCode: signal.aborted ? 'cancelled' : message.includes('stage executor unavailable')
+        errorCode: signal.reason instanceof KnowledgeResearchTimeoutError ? 'timeout' : signal.aborted ? 'cancelled' : message.includes('stage executor unavailable')
           ? 'stage-executor-unavailable'
           : message.includes('web') ? 'web-search-unavailable' : 'research-failed',
       }
@@ -1504,15 +1756,15 @@ export default class KnowledgeWikiService extends TypertRemoteService {
       const known = [this.mainRoot, ...this.readWorkspaces().map(ws => ws.path.replace(/\/+$/u, ''))]
       if (known.includes(target)) {
         if (this.currentRoot !== target) {
-          this.currentRoot = target
-          this.projectGeneration += 1
           this.restoreQueue(target)
           recoverCandidateReviewTransactions(
             this.verifierAuthority,
             this.reviewFile(target),
-            this.activeWikiRoot,
+            createProjectExecutionContext(target, this.mainRoot, this.wikiRoot, this.projectGeneration).wikiRoot,
             join(this.mainRoot, 'jiuzhang-tarballs', 'archive'),
           )
+          this.currentRoot = target
+          this.projectGeneration += 1
         }
       }
       return { current: this.currentRoot, projectContext: this.projectToken(this.currentRoot) }
@@ -1590,6 +1842,7 @@ export default class KnowledgeWikiService extends TypertRemoteService {
         this.projectLifetimes.delete(revoked)
       }
       this.projectTokens.delete(target)
+      if (this.activeIngest !== undefined && this.queue.some(task => task.projectRoot === target && task.status === 'running' && task.id === this.activeIngest?.taskId)) this.activeIngest.controller.abort(new Error('knowledge project was unregistered'))
       this.cancelPendingForRoot(target)
       if (this.currentRoot === target) {
         this.currentRoot = this.mainRoot

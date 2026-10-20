@@ -15,7 +15,7 @@ import {
   readSync,
   realpathSync,
   renameSync,
-  unlinkSync,
+  unlinkSync, linkSync,
   writeFileSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -138,6 +138,37 @@ export function atomicWriteConfinedFile(root: string, input: string, content: st
   const parent = dirname(input).split(sep).join('/')
   if (parent !== '.') ensureConfinedDirectory(root, parent)
   atomicWriteFile(resolveConfinedPath(root, input, true), content)
+}
+
+/**
+ * Publish complete private bytes beneath an ordinary root without replacing an existing file.
+ * @param root - Existing ordinary project root.
+ * @param input - Root-relative destination with ordinary directory ancestors.
+ * @param content - Bytes staged and fsynced before an exclusive hard-link publication.
+ * @returns False on an existing destination; true after durable publication.
+ * @throws On unsafe paths or I/O failures; unpublished staging files are removed.
+ */
+export function createPrivateConfinedFileIfMissing(root: string, input: string, content: Buffer): boolean {
+  resolveConfinedPath(root, input, true)
+  const parent = dirname(input).split(sep).join('/')
+  if (parent !== '.') ensureConfinedDirectory(root, parent)
+  const destination = resolveConfinedPath(root, input, true)
+  const staged = join(dirname(destination), `.ark-create-${randomUUID()}`)
+  try {
+    atomicWriteFile(staged, content)
+    try { linkSync(staged, destination) } catch (error) {
+      if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'EEXIST') return false
+      throw error
+    }
+    unlinkSync(staged)
+    const directory = openSync(dirname(destination), constants.O_RDONLY)
+    try { fsyncSync(directory) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+    } finally { closeSync(directory) }
+    return true
+  } finally {
+    if (existsSync(staged)) unlinkSync(staged)
+  }
 }
 
 function ensureAbsoluteDirectory(path: string): string {

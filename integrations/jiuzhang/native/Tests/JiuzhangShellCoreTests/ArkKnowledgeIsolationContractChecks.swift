@@ -8,6 +8,8 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
   private static let lock = NSLock()
   private static var projectRoots: [String] = []
   private static var requests: [(String, JSONValue)] = []
+  private static var requestTimeouts: [(String, TimeInterval)] = []
+  private static var researchBudget: JSONValue? = .number(600_000)
   private static var held: [KnowledgeIsolationURLProtocol] = []
   private static var holds = Set<String>()
   private static var queueActive = false
@@ -17,7 +19,8 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
 
   static func configure(_ roots: [String]) {
     lock.lock(); defer { lock.unlock() }
-    projectRoots = roots; requests = []; held = []; holds = []; queueActive = false; cancellations = 0
+    projectRoots = roots; requests = []; requestTimeouts = []; held = []; holds = []; queueActive = false; cancellations = 0
+    researchBudget = .number(600_000)
   }
   static func hold(_ method: String) { lock.lock(); holds.insert(method); lock.unlock() }
   static var pending: Int { lock.lock(); defer { lock.unlock() }; return held.count }
@@ -26,11 +29,16 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
   static func captured(_ method: String) -> [JSONValue] {
     lock.lock(); defer { lock.unlock() }; return requests.filter { $0.0 == method }.map(\.1)
   }
-  static func release(_ method: String, context: String? = nil, value: JSONValue) {
+  static func capturedTimeouts(_ method: String) -> [TimeInterval] {
+    lock.lock(); defer { lock.unlock() }; return requestTimeouts.filter { $0.0 == method }.map(\.1)
+  }
+  static func setResearchBudget(_ value: JSONValue?) { lock.lock(); researchBudget = value; lock.unlock() }
+  static func release(_ method: String, context: String? = nil, topic: String? = nil, value: JSONValue) {
     lock.lock()
     let items = held.filter {
       $0.envelope["method"]?.stringValue == method
         && (context == nil || $0.envelope["payload"]?["args"]?["request"]?["projectContext"]?.stringValue == context)
+        && (topic == nil || $0.envelope["payload"]?["args"]?["request"]?["topic"]?.stringValue == topic)
     }
     held.removeAll { item in items.contains { $0 === item } }
     holds.remove(method)
@@ -57,8 +65,10 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
       let payload = envelope["payload"]?["args"]?["request"] ?? .object([:])
       Self.lock.lock()
       Self.requests.append((method, payload))
+      Self.requestTimeouts.append((method, request.timeoutInterval))
       let roots = Self.projectRoots
       let active = Self.queueActive
+      let budget = Self.researchBudget
       if Self.holds.contains(method) { Self.held.append(self); Self.lock.unlock(); return }
       Self.lock.unlock()
       let context = payload["projectContext"]?.stringValue ?? ""
@@ -74,7 +84,9 @@ private final class KnowledgeIsolationURLProtocol: URLProtocol, @unchecked Senda
         reply(.array([.object(["path": .string("concepts/shared.md"), "name": .string("shared.md"), "size": .number(12)])]))
       case "knowledgeWiki/graph": reply(.object(["nodes": .array([]), "edges": .array([])]))
       case "knowledgeWiki/projectStatus":
-        reply(.object(["searchMode": .string("keyword"), "textConfigured": .bool(false), "visionConfigured": .bool(false), "embeddingConfigured": .bool(false)]))
+        var status: [String: JSONValue] = ["searchMode": .string("keyword"), "textConfigured": .bool(false), "visionConfigured": .bool(false), "embeddingConfigured": .bool(false)]
+        if let budget { status["researchTimeoutMs"] = budget }
+        reply(.object(status))
       case "knowledgeWiki/reviews": reply(.array([]))
       case "knowledgeWiki/pageContent": reply(.object(["content": .string(context == "context-A" ? "A BODY" : "B BODY")]))
       case "knowledgeWiki/ingestQueueStatus": reply(Self.queue(active: active))
@@ -145,13 +157,62 @@ func runArkKnowledgeIsolationContractChecks() async {
     let scopedMethods = ["knowledgeWiki/list", "knowledgeWiki/graph", "knowledgeWiki/reviews", "knowledgeWiki/projectStatus", "knowledgeWiki/pageContent", "knowledgeWiki/ingestQueueStatus"]
     check(scopedMethods.allSatisfy { method in KnowledgeIsolationURLProtocol.captured(method).allSatisfy { $0["projectContext"] == .string("context-A") } },
       "knowledge read entrypoints carry the captured project identity")
+    check(model.wikiResearchReady && !model.wikiResearchBusy,
+      "a valid Host research budget makes the native research owner ready")
+    KnowledgeIsolationURLProtocol.setResearchBudget(nil)
+    await model.loadWiki()
+    let unavailableCount = KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count
+    model.runDeepResearch(topic: "missing deadline")
+    check(!model.wikiResearchReady && !model.wikiResearchBusy
+      && KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count == unavailableCount
+      && model.knowledgeErrorMessage?.contains("时限配置缺失或无效") == true,
+      "a missing Host deadline blocks research without a network fallback")
+    KnowledgeIsolationURLProtocol.setResearchBudget(.number(600_000))
+    await model.loadWiki()
+
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/search")
+    let searchCancellationBaseline = KnowledgeIsolationURLProtocol.cancelledCount
+    for index in 0..<8 {
+      let query = "synthetic latest \(index)"
+      model.searchKnowledge(query)
+      let latestOnly = await knowledgeIsolationEventually {
+        KnowledgeIsolationURLProtocol.pending == 1
+          && KnowledgeIsolationURLProtocol.captured("knowledgeWiki/search").last?["query"] == .string(query)
+      }
+      check(latestOnly, "repeated knowledge searches keep only the latest transport request active")
+    }
+    check(KnowledgeIsolationURLProtocol.cancelledCount >= searchCancellationBaseline + 7,
+      "superseded knowledge searches cancel transport work rather than only ignoring results")
+    model.clearKnowledgeSearch()
+    let searchCleared = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 0 }
+    check(searchCleared, "clearing a knowledge search cancels its outstanding request")
+    model.searchKnowledge("synthetic project switch")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    model.selectKnowledgeProject(path: b.path)
+    let projectSearchCancelled = await knowledgeIsolationEventually {
+      KnowledgeIsolationURLProtocol.pending == 0 && model.selectedWikiPage?.body == "B BODY"
+    }
+    check(projectSearchCancelled, "switching knowledge projects cancels the old project's search")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/search", value: .array([]))
+    model.selectKnowledgeProject(path: a.path)
+    _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "A BODY" }
 
     KnowledgeIsolationURLProtocol.hold("knowledgeWiki/pageContent")
     model.selectWikiPage("concepts/shared")
     _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
-    // B must complete while A's old content is outstanding.
+    let pageCancellationBaseline = KnowledgeIsolationURLProtocol.cancelledCount
+    model.selectWikiPage("concepts/shared")
+    let pageReadCancelled = await knowledgeIsolationEventually {
+      KnowledgeIsolationURLProtocol.pending == 1
+        && KnowledgeIsolationURLProtocol.cancelledCount > pageCancellationBaseline
+    }
+    check(pageReadCancelled, "selecting another knowledge page cancels the previous page read")
     model.selectKnowledgeProject(path: b.path)
-    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 2 }
+    let projectPageCancelled = await knowledgeIsolationEventually {
+      KnowledgeIsolationURLProtocol.pending == 1
+        && KnowledgeIsolationURLProtocol.captured("knowledgeWiki/pageContent").last?["projectContext"] == .string("context-B")
+    }
+    check(projectPageCancelled, "switching projects leaves only the new project's page request active")
     KnowledgeIsolationURLProtocol.release("knowledgeWiki/pageContent", context: "context-B", value: .object(["content": .string("B delayed body")]))
     _ = await knowledgeIsolationEventually { model.selectedWikiPage?.body == "B delayed body" }
     KnowledgeIsolationURLProtocol.release("knowledgeWiki/pageContent", context: "context-A", value: .object(["content": .string("A OLD LATE BODY")]))
@@ -188,6 +249,77 @@ func runArkKnowledgeIsolationContractChecks() async {
       && model.wikiSaveError == nil && model.wikiSavingPageID == nil && model.selectedWikiPage?.body == "B BODY",
       "late A save conflict cannot mark B's same-ID page failed or busy")
 
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    let researchBaseline = KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count
+    for _ in 0..<8 { model.runDeepResearch(topic: "synthetic repeated topic") }
+    let oneResearch = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    check(oneResearch && model.wikiResearchBusy
+      && KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count == researchBaseline + 1,
+      "Return and button repetition share one native research operation and transport")
+    check(KnowledgeIsolationURLProtocol.capturedTimeouts("knowledgeWiki/deepResearch").last == 630
+      && KnowledgeIsolationURLProtocol.capturedTimeouts("knowledgeWiki/list").allSatisfy { $0 == 60 },
+      "research freezes the Host budget plus grace while ordinary RPC keeps its sixty-second timeout")
+    let cancellingResearch = Task { await model.cancelDeepResearch() }
+    _ = await knowledgeIsolationEventually { !model.wikiResearchBusy }
+    model.runDeepResearch(topic: "synthetic retry topic")
+    _ = await knowledgeIsolationEventually {
+      KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count == researchBaseline + 2
+    }
+    await cancellingResearch.value
+    check(model.wikiResearchBusy && KnowledgeIsolationURLProtocol.pending == 1,
+      "an older cancellation and defer cannot clear the retry's research owner")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", topic: "synthetic repeated topic", value: .object([
+      "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("OLD timeout")]),
+      "degraded": .bool(true), "errorCode": .string("research-timeout"),
+    ]))
+    check(model.knowledgeErrorMessage != "OLD timeout", "a cancelled old research response cannot replace retry state")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", topic: "synthetic retry topic", value: .object([
+      "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("NEW search configuration failure")]),
+      "degraded": .bool(true), "errorCode": .string("web-search-unavailable"),
+    ]))
+    let retryFinished = await knowledgeIsolationEventually {
+      !model.wikiResearchBusy && model.knowledgeErrorMessage == "NEW search configuration failure"
+    }
+    check(retryFinished, "only the current research publishes its actual failure and releases busy state")
+
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic project cancellation")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    model.selectKnowledgeProject(path: a.path)
+    let researchProjectCancelled = await knowledgeIsolationEventually {
+      KnowledgeIsolationURLProtocol.pending == 0 && !model.wikiResearchBusy && model.selectedWikiPage?.body == "A BODY"
+    }
+    check(researchProjectCancelled, "project switching cancels and awaits research before installing the new project")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: .null)
+
+    let shortClient = ArkAPIClient(baseURL: endpoint, apiToken: "synthetic", session: transport, researchTimeoutOverride: 0.05)
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    let deadlineStarted = Date()
+    do {
+      _ = try await shortClient.runDeepResearch(projectContext: "context-A", topic: "synthetic deadline", timeout: 630)
+      check(false, "a research absolute deadline rejects an unanswered transport")
+    } catch let error as URLError {
+      check(error.code == .timedOut && Date().timeIntervalSince(deadlineStarted) < 2,
+        "a short injected research deadline throws timeout without waiting the production budget")
+    }
+    let deadlineStopped = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 0 }
+    check(deadlineStopped && KnowledgeIsolationURLProtocol.capturedTimeouts("knowledgeWiki/deepResearch").last == 0.05,
+      "absolute deadline cancellation closes its underlying URLSession transport")
+    KnowledgeIsolationURLProtocol.release("knowledgeWiki/deepResearch", value: .null)
+    _ = try await shortClient.searchKnowledge(projectContext: "context-A", query: "ordinary after timeout")
+    check(KnowledgeIsolationURLProtocol.capturedTimeouts("knowledgeWiki/search").last == 60,
+      "a research-only constructor override leaves ordinary RPC deadlines unchanged")
+    let invalidBaseline = KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count
+    for invalid in [0, -1, TimeInterval.nan, TimeInterval.infinity, TimeInterval.greatestFiniteMagnitude] {
+      let invalidClient = ArkAPIClient(baseURL: endpoint, apiToken: "synthetic", session: transport, researchTimeoutOverride: invalid)
+      do {
+        _ = try await invalidClient.runDeepResearch(projectContext: "context-A", topic: "invalid deadline", timeout: 630)
+        check(false, "invalid research deadlines fail before transport")
+      } catch is ArkAPIError {}
+    }
+    check(KnowledgeIsolationURLProtocol.captured("knowledgeWiki/deepResearch").count == invalidBaseline,
+      "nonpositive and nonfinite constructor deadlines never create a request")
+
     model.runDeepResearch(topic: "synthetic topic")
     _ = await knowledgeIsolationEventually { model.knowledgeErrorMessage == "没有可用搜索来源" }
     check(model.knowledgeErrorMessage == "没有可用搜索来源", "zero-source research displays its blocking warning instead of a completion toast")
@@ -196,9 +328,12 @@ func runArkKnowledgeIsolationContractChecks() async {
     _ = await knowledgeIsolationEventually { model.wikiIngestQueue.hasActiveTasks }
     KnowledgeIsolationURLProtocol.hold("knowledgeWiki/ingestQueueStatus")
     _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 1 }
+    KnowledgeIsolationURLProtocol.hold("knowledgeWiki/deepResearch")
+    model.runDeepResearch(topic: "synthetic shutdown")
+    _ = await knowledgeIsolationEventually { KnowledgeIsolationURLProtocol.pending == 2 }
     await model.shutdown()
-    check(KnowledgeIsolationURLProtocol.pending == 0 && KnowledgeIsolationURLProtocol.cancelledCount > 0,
-      "shutdown awaits cancellation of an in-flight knowledge polling request")
+    check(KnowledgeIsolationURLProtocol.pending == 0 && KnowledgeIsolationURLProtocol.cancelledCount > 0 && !model.wikiResearchBusy,
+      "shutdown awaits polling and research cancellation and invalidates research publication")
   } catch { check(false, "knowledge isolation fixture completes: \(error)") }
   await runKnowledgeFallbackBoundsChecks(root: root)
 }

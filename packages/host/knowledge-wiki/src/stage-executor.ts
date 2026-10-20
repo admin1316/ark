@@ -55,7 +55,7 @@ export interface KnowledgeWikiStageExecutor {
     signal: AbortSignal,
   ): Promise<KnowledgeWikiStageExecutor>
   /** Local provider preflight before research spends a model request. */
-  assertSearchAvailable?(): void
+  assertSearchAvailable?(signal?: AbortSignal): void | Promise<void>
   execute(request: KnowledgeWikiStageRequest, signal: AbortSignal): Promise<KnowledgeWikiStageResult>
 }
 

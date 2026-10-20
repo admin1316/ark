@@ -92,7 +92,7 @@ describe('scanSources', () => {
 })
 
 describe('failure detection', () => {
-  it('treats a warnings-only outcome as a failure (no cache write, cooldown)', async () => {
+  it('retains warnings-only failures as cooldown dispositions without a success hash', async () => {
     vi.spyOn(service, 'executeQueuedIngest').mockResolvedValue({ written: [], warnings: ['LLM key invalid'] })
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     await service.scanSources()
@@ -100,7 +100,7 @@ describe('failure detection', () => {
     expect(service.queue[0]!.status).toBe('error')
     expect(service.queue[0]!.failedAt).toBeTypeOf('number')
     expect(errorLog).toHaveBeenCalledWith('[knowledge-wiki] ingest failed:', 'ark-sessions/a.md', 'LLM key invalid')
-    expect(existsSync(join(root, '.llm-wiki', 'ingest-cache.json'))).toBe(false)
+    expect((JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-cache.json'), 'utf8')) as Record<string, { retryAfter: number }>)['ark-sessions/a.md']?.retryAfter).toBeTypeOf('number')
     await service.scanSources()
     expect(service.queue.filter(task => task.status === 'pending')).toHaveLength(0)
   })
@@ -115,15 +115,15 @@ describe('failure cooldown', () => {
     expect(service.queue[0]!.status).toBe('error')
     expect(service.queue[0]!.failedAt).toBeTypeOf('number')
     expect(errorLog).toHaveBeenCalledWith('[knowledge-wiki] ingest failed:', 'ark-sessions/a.md', 'LLM key invalid')
-    expect(existsSync(join(root, '.llm-wiki', 'ingest-cache.json'))).toBe(false)
+    expect((JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-cache.json'), 'utf8')) as Record<string, { retryAfter: number }>)['ark-sessions/a.md']?.retryAfter).toBeTypeOf('number')
 
     // Still on cooldown: scan must not re-enqueue.
     await service.scanSources()
     expect(service.queue.filter(task => task.status === 'pending')).toHaveLength(0)
 
     // Cooldown elapsed: re-enqueued.
-    service.queue[0] = { ...service.queue[0]!, failedAt: Date.now() - 61 * 60 * 1000 }
-    await service.scanSources()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61 * 60 * 1000)
+    try { await service.scanSources() } finally { clock.mockRestore() }
     expect(service.queue.filter(task => task.status === 'pending')).toHaveLength(1)
   })
 })
@@ -152,7 +152,7 @@ describe('owned timeout and quiescence', () => {
       })
       expect(service.queue[0]!.failedAt).toBeTypeOf('number')
       expect(service.queue[0]!.written).toBeUndefined()
-      expect(existsSync(join(root, '.llm-wiki', 'ingest-cache.json'))).toBe(false)
+      expect((JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-cache.json'), 'utf8')) as Record<string, { retryAfter: number }>)['ark-sessions/a.md']?.retryAfter).toBeTypeOf('number')
     } finally {
       vi.useRealTimers()
     }
@@ -187,30 +187,33 @@ describe('owned timeout and quiescence', () => {
     }
   })
 
-  it('persists a running lease and a user cancellation tombstone', async () => {
-    let started!: () => void
-    const didStart = new Promise<void>((resolve) => { started = resolve })
-    vi.spyOn(service, 'executeQueuedIngest').mockImplementation((_task, _context, signal) =>
-      new Promise((_resolve, reject) => {
-        started()
-        signal.addEventListener('abort', () => {
-          reject(signal.reason instanceof Error ? signal.reason : new Error('ingest aborted'))
-        }, { once: true })
-      }))
+  it('cancels pending work while preserving the running lease and its single completion', async () => {
+    const started = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    let runningSignal: AbortSignal | undefined
+    const execute = vi.spyOn(service, 'executeQueuedIngest').mockImplementation(async (_task, _context, signal) => {
+      runningSignal = signal
+      started.resolve(undefined)
+      await finish.promise
+      return { written: ['_candidates/a.md'], warnings: [] }
+    })
+    writeFileSync(join(root, 'raw', 'sources', 'ark-sessions', 'b.md'), 'content B')
     service.enqueueIngest('ark-sessions/a.md')
+    service.enqueueIngest('ark-sessions/b.md')
     const drain = service.drainQueue()
-    await didStart
+    await started.promise
     const running = JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-queue.json'), 'utf8')) as IngestQueueTask[]
-    expect(running[0]).toMatchObject({ status: 'running' })
-    expect(running[0]!.runId).toBeTypeOf('string')
-    expect(running[0]!.leaseStartedAt).toBeTypeOf('number')
-
-    await service.ingestQueueCancel(projectRequest(service))
+    expect(running[0]?.status).toBe('running')
+    expect(running[0]?.runId).toBeTypeOf('string')
+    expect(running[0]?.leaseStartedAt).toBeTypeOf('number')
+    const cancelled = await service.ingestQueueCancel(projectRequest(service))
+    expect(cancelled.tasks.map(task => task.status)).toEqual(['running', 'cancelled'])
+    expect(runningSignal?.aborted).toBe(false)
+    finish.resolve(undefined)
     await drain
-    const cancelled = JSON.parse(readFileSync(join(root, '.llm-wiki', 'ingest-queue.json'), 'utf8')) as IngestQueueTask[]
-    expect(cancelled[0]).toMatchObject({ status: 'cancelled' })
-    expect(cancelled[0]!.cancelRequestedAt).toBeTypeOf('number')
-    expect(cancelled[0]!.completedAt).toBeTypeOf('number')
+    expect(execute).toHaveBeenCalledOnce()
+    await service.scanSources()
+    expect(service.queue.map(task => task.status)).toEqual(['done', 'cancelled'])
   })
 })
 

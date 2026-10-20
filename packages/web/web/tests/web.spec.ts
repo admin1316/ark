@@ -76,6 +76,27 @@ describe('WebRuntime registration', () => {
 })
 
 describe('WebRuntime execution resolution', () => {
+  it('awaits the selected provider local preflight without dispatching search', async () => {
+    const { ctx, web } = await mountWeb()
+    const controller = new AbortController()
+    let checked = false
+    let searches = 0
+    web.registerSearchProvider({
+      id: 'deferred', available: () => true,
+      async preflight(signal) {
+        expect(signal).toBe(controller.signal)
+        await Promise.resolve()
+        checked = true
+        throw new WebError('synthetic credential missing', 'WEB_PROVIDER_CREDENTIAL_MISSING')
+      },
+      search: () => { searches++; return Promise.resolve(searchResult('unreachable')) },
+    })
+    await expect(web.assertSearchAvailable(controller.signal)).rejects.toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+    expect(checked).toBe(true)
+    expect(searches).toBe(0)
+    await ctx.fiber.dispose()
+  })
+
   it('checks search availability without invoking the provider', async () => {
     const { ctx, web } = await mountWeb()
     let calls = 0
@@ -83,20 +104,20 @@ describe('WebRuntime execution resolution', () => {
       calls += 1
       return Promise.resolve(searchResult('fixture'))
     }))
-    expect(() => { web.assertSearchAvailable() }).not.toThrow()
+    await expect(web.assertSearchAvailable()).resolves.toBeUndefined()
     expect(calls).toBe(0)
     dispose()
-    expect(() => { web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+    await expect(web.assertSearchAvailable()).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
     await ctx.fiber.dispose()
   })
 
   it('applies configured and ambiguous selection failures during preflight', async () => {
     const configured = await mountWeb({ searchProvider: 'missing' })
     configured.web.registerSearchProvider(makeSearchProvider('other', available, () => Promise.resolve(searchResult('other'))))
-    expect(() => { configured.web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }))
+    await expect(configured.web.assertSearchAvailable()).rejects.toMatchObject({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' })
     const ambiguous = await mountWeb()
     for (const id of ['a', 'b']) ambiguous.web.registerSearchProvider(makeSearchProvider(id, available, () => Promise.resolve(searchResult(id))))
-    expect(() => { ambiguous.web.assertSearchAvailable() }).toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }))
+    await expect(ambiguous.web.assertSearchAvailable()).rejects.toMatchObject({ code: 'WEB_PROVIDER_AMBIGUOUS' })
     await configured.ctx.fiber.dispose()
     await ambiguous.ctx.fiber.dispose()
   })

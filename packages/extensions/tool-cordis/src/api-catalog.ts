@@ -1571,10 +1571,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'all projection values at the event cut.',
       },
       {
-        signature: 'async write(session: Session): Promise<void>',
-        description: 'Durably checkpoint one live session NOW (all mandatory points call this; tests and carriers may too). The registry cut is snapshotted at this boundary (states are live references), then the session\'s record is replaced on the domain\'s write chain. NOT fail-soft — callers on the fail-soft paths contain it.',
+        signature: 'write(session: Session): Promise<void>',
+        description: 'Capture a detached live cut and share its session\'s durable writer. A newer pending cut may supersede it; the returned promise settles after the writer drains. Canonical events flush before any live checkpoint reaches storage.',
         parameters: [{ name: 'session', description: 'the live session to checkpoint.' }],
-        returns: 'resolution after durability and event emission.',
+        returns: 'resolution after durability and event emission; rejects on failure or shutdown.',
       },
       {
         signature: 'coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot',
@@ -2798,10 +2798,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer that unregisters the provider.',
       },
       {
-        signature: 'assertSearchAvailable(): void',
+        signature: 'async assertSearchAvailable(signal?: AbortSignal): Promise<void>',
         description: 'Check the selected search capability without making a network request. Consumers use this before starting paid query expansion. Selection is checked again by search() because provider availability can change.',
-        parameters: [],
-        returns: 'nothing when exactly one configured or usable provider can search.',
+        parameters: [{ name: 'signal', description: 'optional cancellation while resolving deferred local credentials.' }],
+        returns: 'completion when selection and the provider\'s local credential check succeed.',
         throws: ['WebError when search is unavailable, misconfigured, or ambiguous.'],
       },
       {
@@ -6442,7 +6442,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebSearchProvider',
-    declaration: 'export interface WebSearchProvider {\n    readonly id: string;\n    available(): boolean;\n    search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;\n}',
+    declaration: 'export interface WebSearchProvider {\n    readonly id: string;\n    available(): boolean;\n    preflight?(signal?: AbortSignal): Promise<void>;\n    search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;\n}',
   },
   {
     name: 'WebSearchRequest',

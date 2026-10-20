@@ -27,7 +27,7 @@ vi.mock('node:https', async importOriginal => ({
 import KnowledgeWikiService, { isBlockedNetworkAddress, readResponseBounded, requestPinned } from '../src/index.ts'
 import { wikiTestConfig } from './config-fixture.ts'
 
-interface NetworkSurface {
+interface NetworkSurface extends Pick<KnowledgeWikiService, 'createProject' | 'setProject' | 'removeProject'> {
   snapshots: { dispose(): void }
   ingestUrl: KnowledgeWikiService['ingestUrl']
   ingestQueueCancel: KnowledgeWikiService['ingestQueueCancel']
@@ -117,21 +117,27 @@ describe('public URL security and clipping', () => {
       request.end = (() => { started.resolve(undefined); return request }) as ClientRequest['end']
       return request
     })
+    const external = join(root, 'external-project')
+    if (kind === 'owner-cancel') {
+      await service.createProject({ name: 'Network owner', path: external })
+      await service.setProject({ path: external })
+    }
     if (kind === 'deadline') vi.useFakeTimers()
     const pending = service.ingestUrl({ ...projectRequest(service), url: 'https://1.1.1.1/held' })
     try {
       await started.promise
       expect(requestSignal?.aborted).toBe(false)
       if (kind === 'deadline') await vi.advanceTimersByTimeAsync(15_000)
-      else await service.ingestQueueCancel(projectRequest(service))
+      else await service.removeProject({ path: external })
       const result = await pending
       expect(requestSignal?.aborted).toBe(true)
       expect(result.written).toEqual([])
-      expect(result.warnings.join('\n')).toContain(kind === 'deadline' ? 'timed out after 15 seconds' : 'ingest cancelled')
+      expect(result.warnings.join('\n')).toContain(kind === 'deadline' ? 'timed out after 15 seconds' : 'project was unregistered')
       expect(mocks.request).toHaveBeenCalledOnce()
       expect(mocks.lookup).not.toHaveBeenCalled()
       if (kind === 'deadline') expect(vi.getTimerCount()).toBe(0)
     } finally {
+      if (kind === 'owner-cancel') await service.removeProject({ path: external })
       await service.ingestQueueCancel(projectRequest(service))
       await pending
       if (kind === 'deadline') vi.useRealTimers()

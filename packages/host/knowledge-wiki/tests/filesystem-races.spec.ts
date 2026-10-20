@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename'
+type Operation = 'open' | 'read' | 'write' | 'mkdir' | 'realpath' | 'rename' | 'link'
 const faults = vi.hoisted(() => ({
   before: undefined as ((operation: Operation, target: unknown) => void) | undefined,
 }))
@@ -38,6 +38,10 @@ vi.mock('node:fs', async (importOriginal) => {
       faults.before?.('realpath', args[0])
       return actual.realpathSync(...args)
     },
+    linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+      faults.before?.('link', args[1])
+      actual.linkSync(...args)
+    },
     renameSync: (...args: Parameters<typeof actual.renameSync>) => {
       faults.before?.('rename', args[0])
       actual.renameSync(...args)
@@ -46,7 +50,7 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 import {
-  atomicWriteFile, createPrivateFileIfMissing, durableUnlinkFile,
+  atomicWriteFile, createPrivateFileIfMissing, createPrivateConfinedFileIfMissing, durableUnlinkFile,
   ensureConfinedDirectory, readRegularFileBounded, resolveConfinedPath,
 } from '../src/filesystem.ts'
 
@@ -63,6 +67,34 @@ afterEach(() => {
 })
 
 describe('Wiki filesystem identity and cleanup under I/O interleavings', () => {
+  it('never publishes partial research bytes when staging fails, and retries complete creation', () => {
+    const root = fixture()
+    faults.before = (operation) => {
+      if (operation !== 'write') return
+      faults.before = undefined
+      throw new Error('synthetic ENOSPC')
+    }
+    expect(() => createPrivateConfinedFileIfMissing(root, 'research/result.md', Buffer.from('complete'))).toThrow('ENOSPC')
+    expect(existsSync(join(root, 'research', 'result.md'))).toBe(false)
+    expect(readdirSync(join(root, 'research'))).toEqual([])
+    expect(createPrivateConfinedFileIfMissing(root, 'research/result.md', Buffer.from('complete'))).toBe(true)
+    expect(createPrivateConfinedFileIfMissing(root, 'research/result.md', Buffer.from('replacement'))).toBe(false)
+    expect(readFileSync(join(root, 'research', 'result.md'), 'utf8')).toBe('complete')
+  })
+
+  it('preserves a competing complete publication at the exclusive link boundary', () => {
+    const root = fixture()
+    const target = join(root, 'research', 'result.md')
+    faults.before = (operation, path) => {
+      if (operation !== 'link' || path !== target) return
+      faults.before = undefined
+      writeFileSync(target, 'competing complete result')
+    }
+    expect(createPrivateConfinedFileIfMissing(root, 'research/result.md', Buffer.from('own result'))).toBe(false)
+    expect(readFileSync(target, 'utf8')).toBe('competing complete result')
+    expect(readdirSync(dirname(target))).toEqual(['result.md'])
+  })
+
   it('rejects a directory replaced with a link between component checks and final realpath', () => {
     const root = fixture()
     const outside = fixture()

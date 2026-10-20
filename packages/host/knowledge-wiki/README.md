@@ -32,6 +32,12 @@ English | [中文](README.zh.md)
 | `ownedStageExecutor` | Enable owned file-extraction workers and calls through the registered LLM/web services (default `false`). |
 | `llmProvider` | LLM provider id for ingest/research (default `deepseek-official`). |
 | `llmModel` | Exact text model for ingest/research (default `deepseek-flash`). |
+| `ingestMaxActiveTasks` | Maximum admitted pending/running tasks across projects (default `64`). |
+| `ingestMaxBatchInputs` | Maximum inputs accepted in one manual enqueue request (default `64`); admission and queue persistence are atomic for the batch. |
+| `ingestHistoryLimit` | Maximum terminal records retained per project (default `128`, permits `0`); source dispositions retain replay suppression. |
+| `ingestStateMaxBytes` | Shared write/read ceiling for each queue or source-disposition file (default `5242880`, range `4096`–`67108864`); must exceed `512 × ingestMaxActiveTasks` for pending lease metadata. |
+| `researchConcurrency` | Maximum distinct concurrent research operations across projects (default `2`); other topics receive a busy result at capacity. |
+| `researchTimeoutMs` | Total research deadline, including search preflight (default `600000`, positive integer up to `3600000`); published by `projectStatus` for caller deadlines. |
 
 ```yaml
 - id: knowledge-wiki
@@ -52,14 +58,17 @@ Automatic session summaries use only registered secondary session workspaces. Th
 
 ## Durable state (.llm-wiki/)
 
-- `ingest-cache.json` — flat `{ identity: sha256 }` map, written only after a successful ingest so failed tasks retry.
-- `ingest-queue.json` — pending/running tasks persisted; restored on service start.
+- `ingest-cache.json` — source identities map to a successful content hash, `{ cancelledHash, admissionId? }` for an explicitly cancelled source version, or `{ retryAfter }` for failure cooldown. Pruning terminal history does not re-admit unchanged completed/cancelled sources or bypass cooldown.
+- `ingest-queue.json` — pending/running tasks and bounded terminal history; restored running tasks become pending without old lease metadata. Each new task has an admission identity so an explicit retry cannot inherit an earlier cancellation. Invalid or over-capacity state fails restoration without publishing a partial queue or changing project selection.
 - `review.json` — append-only array of review items (deduped by deterministic id).
 - `workspaces.json` — registered secondary workspaces.
 
 ## Behavior
 
 - Supported source text is bounded to 5 MiB and decoded as strict UTF-8. Markdown, text, Org, JSON, YAML, HTML/XML, CSV/TSV, and log files are admitted; PDF, Office, unsupported formats, malformed UTF-8, binary controls, and disguised binary containers are rejected before model analysis. Original source files remain local.
+- Queue execution is serialized across projects. A synchronous source/URL import waits only for its own project/task completion, including when another project restores the same numeric id. Manual batches exceeding item, active-work, or complete encoded-state capacity reject without partial admission. Oversized stage outcomes return a capacity error and preserve generated files instead of reporting completion without a recoverable receipt.
+- `ingestQueueCancel` cancels only pending tasks. The running task retains its owner and finishes; project removal and service disposal independently abort owned work. Explicit cancellation persists its source fingerprint; service disposal preserves resumable work without recording a user cancellation. Recovered attempts may repeat external model work if the Host stopped before durable task completion; provider requests have no exactly-once guarantee.
+- Same-project research duplicates with the same normalized topic, route and settings revisions share one operation. Each request owns its subscription: cancelling one subscriber leaves the others running; the final cancellation stops the shared operation. Project removal or service disposal cancels the operation. Different settings revisions never join an older prepared connection. The total owner deadline aborts the same operation; capacity remains occupied until stage cleanup settles, then its timer is cleared. Existing research destinations are preserved; competing same-slug output returns a warning, and complete private staging bytes are published without replacement.
 - Research preflights the configured web service before query expansion. Zero citeable HTTP(S) sources blocks synthesis and page creation. Partial search failures remain warnings; results include source count, degradation, and a stable error classification. Cancellation prevents subsequent writes.
 - Sources under `raw/sources/` are scanned every 60s; changed files are enqueued for two-stage ingest. A failed ingest (LLM error, zero pages written) enters a 60-minute cooldown and never poisons the cache.
 - The summary page for a source is forced onto the deterministic slug contract (`12-ark-sessions--32-…--<fnv32 base36>.md`), matching the existing corpus.

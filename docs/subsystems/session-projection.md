@@ -144,15 +144,13 @@ cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjec
 hydratePrepared( session: Session, meta: SessionHeader, events: readonly SessionEvent[], ): ProjectionSnapshot
 
 /**
- * Durably checkpoint one live session NOW (all mandatory points call
- * this; tests and carriers may too). The registry cut is snapshotted at
- * this boundary (states are live references), then the session's record is
- * replaced on the domain's write chain. NOT fail-soft — callers on the
- * fail-soft paths contain it.
+ * Capture a detached live cut and share its session's durable writer. A newer
+ * pending cut may supersede it; the returned promise settles after the writer
+ * drains. Canonical events flush before any live checkpoint reaches storage.
  * @param session - the live session to checkpoint.
- * @returns resolution after durability and event emission.
+ * @returns resolution after durability and event emission; rejects on failure or shutdown.
  */
-async write(session: Session): Promise<void>
+write(session: Session): Promise<void>
 
 /**
  * Cold-read one session's projections from its complete log. Each unit is

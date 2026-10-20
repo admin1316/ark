@@ -8,9 +8,9 @@ import type { KnowledgeWikiStageExecutor } from '../src/stage-executor.ts'
 export function stageExecutorFor(llm: LlmRuntime, web?: WebRuntime): KnowledgeWikiStageExecutor {
   return {
     isolation: 'owned-worker-v1',
-    assertSearchAvailable() {
+    assertSearchAvailable(signal) {
       if (web === undefined) throw new Error('web service unavailable')
-      web.assertSearchAvailable?.()
+      return web.assertSearchAvailable?.(signal)
     },
     async execute(request, signal) {
       signal.throwIfAborted()

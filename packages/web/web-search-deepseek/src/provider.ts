@@ -194,6 +194,16 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       && isPositiveInteger(options.maxUses)
   }
 
+  /**
+   * Verify the local credential resolver without dispatching a search.
+   * @param signal - cancellation while resolving the operation's credential.
+   * @returns completion when a credential exists; the key is not retained.
+   */
+  async preflight(signal?: AbortSignal): Promise<void> {
+    await this.apiKey(this.resolveOptions(), signal)
+    throwIfSearchAborted(signal)
+  }
+
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
     // One snapshot for the whole operation: credential resolution awaits, and a
     // settings write landing inside that await must not send the key resolved

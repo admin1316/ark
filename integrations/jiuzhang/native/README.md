@@ -17,6 +17,10 @@ The toolbar opens the selected workspace in Finder or Terminal through Launch Se
 
 Archive rows offer Restore and Permanent Delete through a native context menu and named accessibility actions without requiring hover. An in-flight archive mutation disables both actions; permanent deletion still requires its separate confirmation. The compact hover controls and date remain visible in their existing states; the [archive action decision](../../../.agents/notes/implemented/bug-fix/2026-10-20-native-archive-action-reachability.md) records the accessibility and layout trade-off.
 
+Model settings group knowledge connections in a card with aligned model selections, a collapsible optional vector service, and explicit Restore and Save actions. Expanded vector fields retain visible labels, including the secure credential field. Saving a connection does not certify a successful model call.
+
+Knowledge research permits one active operation. Repeated Return or button activation does not submit another request; Cancel, project switching, and shutdown invalidate its results, cancel the transport, and await the owned task. Each request freezes the Host's advertised total research budget plus thirty seconds for cleanup and delivery, with both transfer and absolute deadlines; ordinary RPC requests retain their sixty-second timeout. Missing or invalid research budgets disable submission, and failed or timed-out requests never produce a completion notice.
+
 ## Build
 
 ```sh

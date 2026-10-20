@@ -178,10 +178,11 @@ registerFetchProvider(provider: WebFetchProvider): () => void
  * Check the selected search capability without making a network request.
  * Consumers use this before starting paid query expansion. Selection is
  * checked again by search() because provider availability can change.
- * @returns nothing when exactly one configured or usable provider can search.
+ * @param signal - optional cancellation while resolving deferred local credentials.
+ * @returns completion when selection and the provider's local credential check succeed.
  * @throws WebError when search is unavailable, misconfigured, or ambiguous.
  */
-assertSearchAvailable(): void
+async assertSearchAvailable(signal?: AbortSignal): Promise<void>
 
 /**
  * Run one search through the selected provider. Resolves the provider at call

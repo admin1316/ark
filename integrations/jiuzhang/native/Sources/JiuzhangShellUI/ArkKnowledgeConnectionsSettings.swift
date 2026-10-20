@@ -20,7 +20,9 @@ struct ArkKnowledgeConnectionsSettings: View {
     Binding(get: { fields[key] ?? "" }, set: { fields[key] = $0; result = nil })
   }
   private func routePicker(_ title: String, provider: String, modelKey: String) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
+    GridRow {
+      Text(title).font(.system(size: 12))
+        .fixedSize(horizontal: true, vertical: false)
       Picker(title, selection: Binding(get: {
         (fields[provider] ?? "") + "\u{0}" + (fields[modelKey] ?? "")
       }, set: { value in
@@ -38,56 +40,111 @@ struct ArkKnowledgeConnectionsSettings: View {
           Text("\(p) / \(m)（当前不可用）").tag(p + "\u{0}" + m)
         }
       }
+      .labelsHidden()
+      .pickerStyle(.menu)
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+      .accessibilityLabel(title)
       .accessibilityIdentifier("ark.knowledge.connections.\(provider)")
     }
   }
 
   var body: some View {
     if namespace != nil {
-      GroupBox("知识连接") {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("文本与图片使用下方明确选择的模型连接。图片与云端向量默认关闭，不会借用聊天密钥。")
-            .font(.system(size: 11)).foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("知识连接").font(.system(size: 14, weight: .semibold))
+          Text("为文本分析和图片说明分别选择模型连接。图片与云端向量默认关闭，不会借用聊天密钥。")
+            .font(.system(size: 11)).foregroundStyle(ArkPalette.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
           routePicker("文本分析与研究", provider: "textProvider", modelKey: "textModel")
           routePicker("图片说明", provider: "visionProvider", modelKey: "visionModel")
-          DisclosureGroup("独立向量服务（可选）") {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("留空时仅在本机进行关键词检索。启用后，此端点会收到查询、页面摘要及所选凭据；仅填写属于该服务的凭据引用。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-              TextField("服务名称", text: binding("embeddingProvider"))
-              TextField("HTTPS API 地址（含 /v1 等服务前缀）", text: binding("embeddingBaseUrl"))
-              TextField("向量模型 ID", text: binding("embeddingModel"))
-              TextField("已有独立凭据引用；填写新密钥时自动生成新引用", text: binding("embeddingCredential"))
-              SecureField("向量服务密钥；留空使用已存凭据", text: $embeddingSecret)
+        }
+        Divider().overlay(ArkPalette.border)
+        DisclosureGroup {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("留空时仅在本机进行关键词检索。启用后，此端点会收到查询、页面摘要及所选凭据；仅填写属于该服务的凭据引用。")
+              .font(.system(size: 11)).foregroundStyle(ArkPalette.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+              GridRow {
+                Text("服务名称")
+                TextField("向量服务的名称", text: binding("embeddingProvider"))
+                  .accessibilityLabel("服务名称")
+              }
+              GridRow {
+                Text("API 地址")
+                TextField("HTTPS 地址，含 /v1 等服务前缀", text: binding("embeddingBaseUrl"))
+                  .accessibilityLabel("API 地址")
+              }
+              GridRow {
+                Text("向量模型")
+                TextField("模型 ID", text: binding("embeddingModel"))
+                  .accessibilityLabel("向量模型")
+              }
+              GridRow {
+                Text("凭据引用")
+                TextField("已有独立引用；填写新密钥后自动生成", text: binding("embeddingCredential"))
+                  .accessibilityLabel("凭据引用")
+              }
+              GridRow {
+                Text("服务密钥")
+                SecureField("留空使用已存凭据", text: $embeddingSecret)
+                  .accessibilityLabel("服务密钥")
+              }
+            }
+            .font(.system(size: 12))
+            .textFieldStyle(.roundedBorder)
+            HStack {
+              Spacer()
               Button("关闭云端向量检索") {
                 for key in names where key.hasPrefix("embedding") { fields[key] = "" }
                 embeddingSecret = ""
+                result = nil
               }
-            }.textFieldStyle(.roundedBorder).padding(.top, 8)
+            }
           }
-          if let result { Text(result).font(.system(size: 11)).textSelection(.enabled) }
-          HStack {
-            Button("恢复已保存配置", action: reload)
-            Spacer()
-            Button(saving ? "正在保存…" : "保存知识连接") {
-              saving = true
-              let values = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-              let expected = revision
-              let secret = embeddingSecret
-              Task {
-                defer { saving = false }
-                if await model.saveKnowledgeConnections(values, expectedRevision: expected, embeddingSecret: secret) {
-                  reload()
-                  result = "知识连接已保存；这不表示实际模型调用已经通过验证。"
-                } else { result = "配置未保存，请重新载入并检查错误信息。" }
-              }
-            }.accessibilityIdentifier("ark.knowledge.connections.save")
+          .padding(.top, 12)
+        } label: {
+          HStack(spacing: 6) {
+            Text("独立向量服务").font(.system(size: 12, weight: .medium))
+            Text("可选").font(.system(size: 11)).foregroundStyle(ArkPalette.secondary)
           }
-        }.padding(8)
-        .disabled(saving || model.settingsBusy || model.settingsSnapshot?.writable != true)
+        }
+        Divider().overlay(ArkPalette.border)
+        if let result {
+          Text(result).font(.system(size: 11)).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        HStack(spacing: 8) {
+          Spacer()
+          Button("恢复已保存配置", action: reload)
+          Button(saving ? "正在保存…" : "保存知识连接") {
+            saving = true
+            let values = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let expected = revision
+            let secret = embeddingSecret
+            Task {
+              defer { saving = false }
+              if await model.saveKnowledgeConnections(values, expectedRevision: expected, embeddingSecret: secret) {
+                reload()
+                result = "知识连接已保存；这不表示实际模型调用已经通过验证。"
+              } else { result = "配置未保存，请重新载入并检查错误信息。" }
+            }
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("ark.knowledge.connections.save")
+        }
       }
+      .padding(14)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(ArkPalette.shell, in: RoundedRectangle(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(ArkPalette.border))
+      .disabled(saving || model.settingsBusy || model.settingsSnapshot?.writable != true)
       .onAppear(perform: reload)
       .onDisappear { embeddingSecret = "" }
+      .accessibilityIdentifier("ark.settings.knowledge-connections")
     }
   }
   private func reload() {

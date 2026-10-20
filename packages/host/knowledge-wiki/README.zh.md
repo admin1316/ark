@@ -33,6 +33,12 @@ kind: "package-reference"
 | `ownedStageExecutor` | 启用独占文件提取 worker，并通过已注册 LLM/web 服务执行调用（默认 `false`）。 |
 | `llmProvider` | 摄取/研究的 LLM provider id（默认 `deepseek-official`）。 |
 | `llmModel` | 摄取/研究的精确文本模型（默认 `deepseek-flash`）。 |
+| `ingestMaxActiveTasks` | 跨项目已准入 pending/running 任务总上限（默认 `64`）。 |
+| `ingestMaxBatchInputs` | 单次手动入队的输入数上限（默认 `64`）；整批准入和队列持久化原子提交。 |
+| `ingestHistoryLimit` | 每项目保留的终态记录上限（默认 `128`，允许 `0`）；来源处理状态继续抑制重复执行。 |
+| `ingestStateMaxBytes` | 每份队列或来源处理状态文件共用的读写字节上限（默认 `5242880`，范围 `4096`–`67108864`）；必须大于 `512 × ingestMaxActiveTasks`，为 pending 的运行租约元数据预留空间。 |
+| `researchConcurrency` | 跨项目不同研究操作的并发上限（默认 `2`）；达到容量时其他主题收到忙状态。 |
+| `researchTimeoutMs` | 包含搜索预检的研究总期限（默认 `600000`，最大 `3600000` 的正整数）；通过 `projectStatus` 公布，供调用方设置期限。 |
 
 ```yaml
 - id: knowledge-wiki
@@ -54,8 +60,8 @@ kind: "package-reference"
 <a id="durable-state-llm-wiki"></a>
 ## 持久状态（.llm-wiki/）
 
-- `ingest-cache.json` —— 扁平 `{ identity: sha256 }` 映射，仅在摄取成功后写入，失败任务因此可重试。
-- `ingest-queue.json` —— pending/running 任务持久化；服务启动时恢复。
+- `ingest-cache.json` —— 来源身份映射到成功的内容 hash、显式取消版本的 `{ cancelledHash, admissionId? }` 或失败冷却的 `{ retryAfter }`。终态历史回收不会使未变化的成功/取消来源重新准入，也不会绕过失败冷却。
+- `ingest-queue.json` —— pending/running 任务及有界终态历史；恢复时 running 转为 pending，并移除旧租约元数据。新任务携带准入身份，显式重试不会继承旧取消记录。状态无效或超过容量时，恢复失败，不发布部分队列，也不改变项目选择。
 - `review.json` —— 追加式评审项数组（按确定性 id 去重）。
 - `workspaces.json` —— 已注册的次级工作区。
 
@@ -63,6 +69,9 @@ kind: "package-reference"
 ## 行为
 
 - 文本源最多 5 MiB，必须为严格 UTF-8。支持 Markdown、文本、Org、JSON、YAML、HTML/XML、CSV/TSV 和日志；PDF、Office、不支持格式、无效 UTF-8、二进制控制字符和伪装二进制容器在模型分析前拒绝，原文件保留本机。
+- 队列跨项目串行执行。同步文件/URL 导入只等待自己项目和任务的完成，即使其他项目恢复了相同数字 id。手动批次超过输入数、活动任务数或完整编码状态容量时整批拒绝。阶段结果超限会明确返回容量错误，保留已生成文件，不把没有可恢复回执的结果显示为完成。
+- `ingestQueueCancel` 只取消 pending 任务；运行项保留所有者并继续完成。项目注销和服务卸载独立中止所属工作。显式取消持久保存来源指纹；服务卸载保留可恢复任务，不记录用户取消。Host 在持久完成前停止时，恢复尝试可能重复外部模型工作；提供方请求没有恰好一次执行保证。
+- 同项目、规范化主题、连接和设置修订相同的研究请求共享操作。每个请求拥有自己的订阅：一个订阅者取消不影响其他订阅者，最后一个取消才停止共享操作；项目注销或服务卸载会取消操作。不同设置修订不加入旧的预备连接。总期限中止同一个操作；阶段清理真正结束后才释放容量并清除计时器。已有研究目标文件保持原样；同 slug 的竞争输出返回警告，完整私有暂存内容以不覆盖方式发布。
 - 研究在扩展查询前检查 web 服务可用性；零个可引用 HTTP(S) 来源时不综合、不生成研究页。部分搜索失败作为警告，结果保留来源数、降级状态和错误分类；取消后不再开始后续写入。
 - 每 60 秒扫描 `raw/sources/`，变更文件入队两阶段摄取。失败（LLM 错误、零页产出）进入 60 分钟冷却，绝不污染缓存。
 - 源文件摘要页强制落到确定性 slug 契约（`12-ark-sessions--32-…--<fnv32 base36>.md`），与存量语料一致。

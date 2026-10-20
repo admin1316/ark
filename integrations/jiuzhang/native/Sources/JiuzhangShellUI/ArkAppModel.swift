@@ -653,6 +653,10 @@ public final class ArkAppModel: ObservableObject {
   @Published public private(set) var wikiIngestError: String?
   @Published public private(set) var wikiReviewBusy = false
   @Published public private(set) var wikiReviewError: String?
+  @Published private(set) var knowledgeResearchOperationID: UUID?
+  @Published private(set) var knowledgeResearchRequestTimeout: TimeInterval?
+  public var wikiResearchBusy: Bool { knowledgeResearchOperationID != nil }
+  public var wikiResearchReady: Bool { knowledgeResearchRequestTimeout != nil }
   @Published public private(set) var sessionSearchHits: [ArkSessionSearchHit] = []
   @Published public private(set) var sessionSearchDidRun = false
   @Published public private(set) var sessionSearchLoading = false
@@ -942,6 +946,8 @@ public final class ArkAppModel: ObservableObject {
   private var wikiLoadGeneration: UInt64 = 0
   private var knowledgeSearchGeneration: UInt64 = 0
   private var knowledgeOperationTasks: [UUID: Task<Void, Never>] = [:]
+  private var knowledgeSearchOperationID: UUID?
+  private var knowledgePageOperationID: UUID?
   private var knowledgeStopped = false
   private struct KnowledgeScope: Equatable {
     let path: String
@@ -3286,6 +3292,7 @@ public final class ArkAppModel: ObservableObject {
   public func shutdown() async {
     composerStopped = true
     knowledgeStopped = true
+    _ = stopDeepResearch()
     knowledgeGeneration &+= 1
     wikiLoadGeneration &+= 1
     let submission = composerSubmissionTask
@@ -3522,14 +3529,18 @@ public final class ArkAppModel: ObservableObject {
   public func selectWorkspace(_ workspaceID: String) {
     navigationErrorMessage = nil
     selectedWorkspaceID = workspaceID
+    var cancelledResearch: Task<Void, Never>?
     if let workspace = workspaces.first(where: { $0.id == workspaceID }) {
-      invalidateKnowledgeSelection()
+      cancelledResearch = invalidateKnowledgeSelection()
       stopKnowledgeIngestPolling(resetQueue: true)
       selectedKnowledgeProjectPath = workspace.path
     }
     clearConversationSurface()
     wikiTask?.cancel()
-    wikiTask = Task { [weak self] in await self?.loadWiki() }
+    wikiTask = Task { [weak self, cancelledResearch] in
+      if let cancelledResearch { await cancelledResearch.value }
+      await self?.loadWiki()
+    }
   }
 
   /// Enter the resident new-conversation hero without creating a durable
@@ -3955,9 +3966,10 @@ public final class ArkAppModel: ObservableObject {
           clearConversationSurface()
         }
         if selectedKnowledgeProjectPath == workspace.path {
-          invalidateKnowledgeSelection()
+          let cancelledResearch = invalidateKnowledgeSelection()
           stopKnowledgeIngestPolling(resetQueue: true)
           selectedKnowledgeProjectPath = nil
+          if let cancelledResearch { await cancelledResearch.value }
         }
         await refreshNavigation()
         postResultMessage(ArkL10n.text(.toastWorkspaceRecordsRemoved, languagePreference))
@@ -5588,17 +5600,25 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func selectWikiPage(_ id: String?) {
+    if let previous = knowledgePageOperationID { knowledgeOperationTasks[previous]?.cancel() }
+    knowledgePageOperationID = nil
     selectedWikiPageID = id
     guard let id else { return }
     let operationID = UUID()
+    knowledgePageOperationID = operationID
     knowledgeOperationTasks[operationID] = Task {
-      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      defer {
+        knowledgeOperationTasks.removeValue(forKey: operationID)
+        if knowledgePageOperationID == operationID { knowledgePageOperationID = nil }
+      }
       guard !knowledgeStopped, !Task.isCancelled else { return }
       await loadWikiPageContent(id: id)
     }
   }
 
   public func searchKnowledge(_ query: String) {
+    if let previous = knowledgeSearchOperationID { knowledgeOperationTasks[previous]?.cancel() }
+    knowledgeSearchOperationID = nil
     knowledgeSearchGeneration &+= 1
     let searchGeneration = knowledgeSearchGeneration
     let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5608,8 +5628,12 @@ public final class ArkAppModel: ObservableObject {
     }
     guard let scope = knowledgeScope() else { return }
     let operationID = UUID()
+    knowledgeSearchOperationID = operationID
     knowledgeOperationTasks[operationID] = Task {
-      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      defer {
+        knowledgeOperationTasks.removeValue(forKey: operationID)
+        if knowledgeSearchOperationID == operationID { knowledgeSearchOperationID = nil }
+      }
       guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
         let hits = try await client.searchKnowledge(projectContext: scope.context, query: normalized, topK: 50)
@@ -5628,11 +5652,19 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func clearKnowledgeSearch() {
+    if let previous = knowledgeSearchOperationID { knowledgeOperationTasks[previous]?.cancel() }
+    knowledgeSearchOperationID = nil
     knowledgeSearchGeneration &+= 1
     knowledgeSearchPaths = []
   }
 
-  private func invalidateKnowledgeSelection() {
+  @discardableResult
+  private func invalidateKnowledgeSelection() -> Task<Void, Never>? {
+    let cancelledResearch = stopDeepResearch()
+    knowledgeResearchRequestTimeout = nil
+    clearKnowledgeSearch()
+    if let previous = knowledgePageOperationID { knowledgeOperationTasks[previous]?.cancel() }
+    knowledgePageOperationID = nil
     knowledgeGeneration &+= 1
     wikiIngestBusy = false
     wikiReviewBusy = false
@@ -5642,18 +5674,21 @@ public final class ArkAppModel: ObservableObject {
     wikiPages = []
     wikiEdges = []
     wikiReviews = []
-    knowledgeSearchPaths = []
     selectedWikiPageID = nil
+    return cancelledResearch
   }
 
   public func selectKnowledgeProject(path: String) {
     guard wikiProjects.contains(where: { $0.path == path }) else { return }
-    invalidateKnowledgeSelection()
+    let cancelledResearch = invalidateKnowledgeSelection()
     knowledgeErrorMessage = nil
     stopKnowledgeIngestPolling(resetQueue: true)
     selectedKnowledgeProjectPath = path
     wikiTask?.cancel()
-    wikiTask = Task { [weak self] in await self?.loadWiki() }
+    wikiTask = Task { [weak self] in
+      if let cancelledResearch { await cancelledResearch.value }
+      await self?.loadWiki()
+    }
   }
 
   public func createKnowledgeProject(name: String, path: String) {
@@ -5684,10 +5719,11 @@ public final class ArkAppModel: ObservableObject {
           args: ["request": .object(["path": .string(normalizedPath)])]
         )
         guard !knowledgeStopped, knowledgeGeneration == operationGeneration else { return }
-        invalidateKnowledgeSelection()
+        let cancelledResearch = invalidateKnowledgeSelection()
         stopKnowledgeIngestPolling(resetQueue: true)
         selectedKnowledgeProjectPath = normalizedPath
         let installedGeneration = knowledgeGeneration
+        if let cancelledResearch { await cancelledResearch.value }
         await loadWiki()
         guard !knowledgeStopped, knowledgeGeneration == installedGeneration,
           selectedKnowledgeProjectPath == normalizedPath else { return }
@@ -5723,8 +5759,9 @@ public final class ArkAppModel: ObservableObject {
           URL(fileURLWithPath: $0).standardizedFileURL.path == normalized
         }) == true {
           stopKnowledgeIngestPolling(resetQueue: true)
-          invalidateKnowledgeSelection()
+          let cancelledResearch = invalidateKnowledgeSelection()
           selectedKnowledgeProjectPath = nil
+          if let cancelledResearch { await cancelledResearch.value }
         }
         wikiTask?.cancel()
         wikiTask = nil
@@ -6022,18 +6059,28 @@ public final class ArkAppModel: ObservableObject {
   }
 
   public func runDeepResearch(topic: String) {
+    guard !wikiResearchBusy, !knowledgeStopped else { return }
     let normalized = topic.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return }
     guard let scope = knowledgeScope() else { return }
+    guard let timeout = knowledgeResearchRequestTimeout else {
+      knowledgeErrorMessage = "研究时限配置缺失或无效，请重新载入知识项目"
+      return
+    }
     let operationID = UUID()
+    knowledgeResearchOperationID = operationID
+    knowledgeErrorMessage = nil
     knowledgeOperationTasks[operationID] = Task {
-      defer { knowledgeOperationTasks.removeValue(forKey: operationID) }
+      defer {
+        knowledgeOperationTasks.removeValue(forKey: operationID)
+        if knowledgeResearchOperationID == operationID { knowledgeResearchOperationID = nil }
+      }
       guard !knowledgeStopped, !Task.isCancelled else { return }
       do {
-        let result = try await client.runDeepResearch(projectContext: scope.context, topic: normalized)
-        guard knowledgeScopeIsCurrent(scope) else { return }
+        let result = try await client.runDeepResearch(projectContext: scope.context, topic: normalized, timeout: timeout)
+        guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
         await loadWiki()
-        guard knowledgeScopeIsCurrent(scope) else { return }
+        guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
         guard result.errorCode == nil, result.sourceCount > 0 else {
           knowledgeErrorMessage = result.warnings.first ?? "研究没有取得来源，未生成研究结果"
           return
@@ -6041,10 +6088,23 @@ public final class ArkAppModel: ObservableObject {
         postResultMessage("研究完成：\(result.sourceCount) 个来源，\(result.findings.count) 个页面")
         knowledgeErrorMessage = result.degraded ? result.warnings.joined(separator: "\n") : nil
       } catch {
-        guard knowledgeScopeIsCurrent(scope) else { return }
+        guard knowledgeResearchOperationID == operationID, knowledgeScopeIsCurrent(scope) else { return }
         knowledgeErrorMessage = error.localizedDescription
       }
     }
+  }
+
+  private func stopDeepResearch() -> Task<Void, Never>? {
+    guard let operationID = knowledgeResearchOperationID else { return nil }
+    knowledgeResearchOperationID = nil
+    let task = knowledgeOperationTasks[operationID]
+    task?.cancel()
+    return task
+  }
+
+  /// Invalidate publication before cancellation and await the existing task owner.
+  public func cancelDeepResearch() async {
+    if let task = stopDeepResearch() { await task.value }
   }
 
   public func resolveReview(_ reviewID: String, action: String?) {
@@ -6133,6 +6193,10 @@ public final class ArkAppModel: ObservableObject {
       guard let projectContext = project.projectContext, !projectContext.isEmpty else {
         throw ArkAPIError(message: "知识项目身份缺失，请重新启动后台")
       }
+      if selectedKnowledgeProjectPath != project.path
+        || wikiProjects.first(where: { $0.path == project.path })?.projectContext != projectContext {
+        knowledgeResearchRequestTimeout = nil
+      }
       wikiProjects = projects
       selectedKnowledgeProjectPath = project.path
       activeWikiTitle = project.displayName
@@ -6157,6 +6221,7 @@ public final class ArkAppModel: ObservableObject {
             languagePreference == requestedLanguage
       else { return }
       knowledgeSearchMode = status["searchMode"]?.stringValue ?? "keyword"
+      knowledgeResearchRequestTimeout = try? ArkDomainAPIContract.knowledgeResearchTimeout(from: status)
       let nodesByPath = ArkWikiLoader.firstGraphNodeByPath(
         graph["nodes"]?.arrayValue ?? []
       )

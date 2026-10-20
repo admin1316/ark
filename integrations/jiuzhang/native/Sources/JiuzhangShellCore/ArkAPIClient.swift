@@ -611,19 +611,33 @@ public actor ArkAPIClient {
   private let baseURL: URL
   private let apiToken: String
   private let session: URLSession
+  private let researchTimeoutOverride: TimeInterval?
 
-  public init(baseURL: URL, apiToken: String, session: URLSession = .shared) {
+  public init(
+    baseURL: URL,
+    apiToken: String,
+    session: URLSession = .shared,
+    researchTimeoutOverride: TimeInterval? = nil
+  ) {
     self.baseURL = baseURL
     self.apiToken = apiToken
     self.session = session
+    self.researchTimeoutOverride = researchTimeoutOverride
   }
 
   public static func endpointURL(baseURL: URL, method: String) -> URL {
     baseURL.appendingPathComponent("api/\(method)")
   }
 
-  /// Call one `/api/<method>` endpoint and return its successful value.
-  public func call(method: String, payload: JSONValue = .object([:])) async throws -> JSONValue {
+  /// A supplied timeout bounds the complete transfer as well as idle waiting;
+  /// expiration cancels and awaits the owned URLSession task before throwing.
+  /// Omission preserves the ordinary URLRequest timeout.
+  public func call(
+    method: String,
+    payload: JSONValue = .object([:]),
+    timeout: TimeInterval? = nil
+  ) async throws -> JSONValue {
+    let timeout = try timeout.map(Self.validatedTimeout)
     let rpcID = UUID().uuidString.lowercased()
     let body: JSONValue = .object([
       "type": .string("client-request"),
@@ -636,8 +650,26 @@ public actor ArkAPIClient {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
     request.httpBody = try JSONEncoder().encode(body)
+    if let timeout { request.timeoutInterval = timeout }
 
-    let (data, response) = try await session.data(for: request)
+    let data: Data
+    let response: URLResponse
+    if let timeout {
+      let transport = session
+      let boundedRequest = request
+      (data, response) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+        group.addTask { try await transport.data(for: boundedRequest) }
+        group.addTask {
+          try await Task.sleep(nanoseconds: max(1, UInt64(timeout * 1_000_000_000)))
+          throw URLError(.timedOut)
+        }
+        defer { group.cancelAll() }
+        guard let result = try await group.next() else { throw CancellationError() }
+        return result
+      }
+    } else {
+      (data, response) = try await session.data(for: request)
+    }
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       let status = (response as? HTTPURLResponse)?.statusCode ?? -1
       throw ArkAPIError(message: "本机服务请求失败（HTTP \(status)）")
@@ -661,6 +693,19 @@ public actor ArkAPIClient {
       code: error?["code"]?.stringValue,
       details: error?["details"]
     )
+  }
+
+  /// Freeze an explicitly injected research limit or the validated Host budget.
+  func researchRequestTimeout(_ advertisedTimeout: TimeInterval) throws -> TimeInterval {
+    _ = try Self.validatedTimeout(advertisedTimeout)
+    return try Self.validatedTimeout(researchTimeoutOverride ?? advertisedTimeout)
+  }
+
+  private static func validatedTimeout(_ value: TimeInterval) throws -> TimeInterval {
+    guard value.isFinite, value > 0, value <= TimeInterval(UInt64.max / 1_000_000_000) else {
+      throw ArkAPIError(message: "请求时限必须是可表示的正有限秒数")
+    }
+    return value
   }
 
   public func workspaceList() async throws -> ArkWorkspaceList {
@@ -744,10 +789,15 @@ public actor ArkAPIClient {
   }
 
   /// Call one Typert Remote method and unwrap exactly its Gateway result.
-  public func remoteCall(method: String, args: [String: JSONValue] = [:]) async throws -> JSONValue {
+  public func remoteCall(
+    method: String,
+    args: [String: JSONValue] = [:],
+    timeout: TimeInterval? = nil
+  ) async throws -> JSONValue {
     let result = try await call(
       method: method,
-      payload: .object(["args": .object(args)])
+      payload: .object(["args": .object(args)]),
+      timeout: timeout
     )
     let value = try Self.remoteValue(from: result)
     if method == "subagent/history", args["beforeSeq"]?.objectValue == nil {

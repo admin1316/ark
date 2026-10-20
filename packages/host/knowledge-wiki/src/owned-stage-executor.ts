@@ -88,10 +88,10 @@ async function extractOwned(path: string, signal: AbortSignal): Promise<Knowledg
 export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): KnowledgeWikiStageExecutor {
   const executor: KnowledgeWikiStageExecutor = {
     isolation: 'owned-worker-v1',
-    assertSearchAvailable() {
+    assertSearchAvailable(signal) {
       const web = options.web()
       if (web === undefined) throw new Error('knowledge web search is unavailable')
-      web.assertSearchAvailable()
+      return web.assertSearchAvailable(signal)
     },
     async prepareOperation(route, signal) {
       signal.throwIfAborted()
@@ -102,7 +102,7 @@ export function createOwnedStageExecutor(options: OwnedStageExecutorOptions): Kn
       signal.throwIfAborted()
       return {
         isolation: executor.isolation,
-        assertSearchAvailable: () => executor.assertSearchAvailable?.(),
+        assertSearchAvailable: signal => executor.assertSearchAvailable?.(signal),
         execute(request, stageSignal) {
           if (request.kind !== 'llm-complete') return execute(request, stageSignal)
           const call = calls.shift()

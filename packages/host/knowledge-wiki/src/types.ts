@@ -11,6 +11,9 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** Host-issued identity for one registered project during this service lifetime. */
 export type KnowledgeProjectContextId = Branded<'KnowledgeProjectContext'>
 
+/** Durable identity for one source admission, distinct from subsequent explicit retries. */
+export type KnowledgeIngestAdmissionId = Branded<'KnowledgeIngestAdmission'>
+
 /** One concept-graph node as served by LLM Wiki. */
 export interface WikiGraphNode {
   /** Stable node id. */
@@ -234,6 +237,8 @@ export interface IngestOutcome {
 /** One queued ingestion task. */
 export interface IngestQueueTask {
   readonly id: number
+  /** Stable admission identity distinguishes explicit retries from earlier cancellation records. */
+  readonly admissionId?: KnowledgeIngestAdmissionId
   /** Source path or URL. */
   readonly input: string
   /** Immutable workspace identity captured when the task was enqueued. */
@@ -303,5 +308,5 @@ export interface KnowledgeResearchResult {
   readonly sourceCount: number
   readonly warnings: string[]
   readonly degraded: boolean
-  readonly errorCode?: 'web-search-unavailable' | 'no-sources' | 'invalid-queries' | 'stage-executor-unavailable' | 'research-failed' | 'cancelled'
+  readonly errorCode?: 'web-search-unavailable' | 'no-sources' | 'invalid-queries' | 'stage-executor-unavailable' | 'research-failed' | 'cancelled' | 'timeout'
 }

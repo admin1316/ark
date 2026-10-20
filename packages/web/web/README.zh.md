@@ -62,7 +62,7 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 
 两个调用都接受可选的 `AbortSignal`，用于把取消转发给提供方。规范化的请求与结果形状是调用方赖以构建的约定；[web 子系统](../../../docs/subsystems/web.zh.md) 参考中的词汇章节对其有穷尽式描述。
 
-`ctx.web.assertSearchAvailable()` 执行相同的本地搜索提供方选择，不发送查询或网络请求。消费方可在付费查询扩展前调用；缺失、不可用、配置错误或歧义选择抛出相同的 `WebError` code。它既不预留提供方，也不证明远端健康：`search()` 执行时会重新选择。
+`await ctx.web.assertSearchAvailable(signal)` 执行本地搜索提供方选择，并等待选中提供方可选的本地凭据预检，不发送查询或网络请求。消费方必须在付费查询扩展前等待它完成；选择失败或缺少凭据会阻断该工作。它既不预留提供方，也不证明远端健康：`search()` 执行时会重新选择，并解析自己的凭据快照。
 
 ### 提供方选择
 
@@ -151,7 +151,7 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 
 这些限制说明本服务单独使用时在哪些方面不完整。它们是当前包约束。
 
-- **没有提供方状态订阅**：`assertSearchAvailable()` 只检查本地搜索选择；没有提供方变更事件、抓取预检或逐提供方原因枚举。无提供方失败仍为 `WEB_PROVIDER_UNAVAILABLE`（见[历史观测决策](../../../.agents/notes/archived/simplification/2026-07-04-drop-unconsumed-web-observation-surface.zh.md)）。
+- **没有提供方状态订阅**：`assertSearchAvailable()` 检查当前的本地搜索就绪状态；没有提供方变更事件、抓取预检或逐提供方原因枚举。无提供方失败仍为 `WEB_PROVIDER_UNAVAILABLE`（见[历史观测决策](../../../.agents/notes/archived/simplification/2026-07-04-drop-unconsumed-web-observation-surface.zh.md)）。
 - **搜索请求只携带 `query` 与 `maxResults`**：提供方无关的控制项（新近程度、域名过滤条件、区域提示、搜索深度）暂缓至后端都能诚实支持时（见 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md)）。
 - **`WebFetchBody` 没有 `pdf` 分支**：可提取文本的 PDF 支持属于明确的延期工作；封闭联合会使新增该分支成为跨 web 包、由编译强制执行的变更。
 - **提供方支持的页面提取不属于 `fetch()` 范围**：Firecrawl/Tavily 风格的 `web_extract` 能力延期，而不会扩展抓取操作。

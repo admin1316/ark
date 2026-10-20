@@ -9,9 +9,9 @@ vi.mock('../src/filesystem.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/filesystem.ts')>()
   return {
     ...actual,
-    atomicWriteConfinedFile: (...args: Parameters<typeof actual.atomicWriteConfinedFile>) => {
+    createPrivateConfinedFileIfMissing: (...args: Parameters<typeof actual.createPrivateConfinedFileIfMissing>) => {
       if (writes.failure !== undefined) throw writes.failure
-      actual.atomicWriteConfinedFile(...args)
+      return actual.createPrivateConfinedFileIfMissing(...args)
     },
   }
 })

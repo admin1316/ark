@@ -10,7 +10,7 @@ import { basename } from 'node:path'
 import type { WebSearchSource } from '@deepseek-ai/dsh-web'
 import { parseFileBlocks } from './ingest.ts'
 import type { ResearchResult } from './types.ts'
-import { atomicWriteConfinedFile } from './filesystem.ts'
+import { createPrivateConfinedFileIfMissing } from './filesystem.ts'
 import { executeKnowledgeWikiStage, type KnowledgeWikiStageExecutor } from './stage-executor.ts'
 
 /** Parse 3-5 search queries out of the LLM expansion output. */
@@ -45,7 +45,8 @@ export async function deepResearch(
   signal.throwIfAborted()
   if (executor === undefined) throw new Error('knowledge Wiki stage executor unavailable; refusing research')
   if (executor.assertSearchAvailable === undefined) throw new Error('knowledge web search availability cannot be established')
-  executor.assertSearchAvailable()
+  await executor.assertSearchAvailable(signal)
+  signal.throwIfAborted()
   const operationExecutor = executor.prepareOperation === undefined
     ? executor
     : await executor.prepareOperation({ provider, model, modelCalls: 2 }, signal)
@@ -163,7 +164,10 @@ export async function deepResearch(
       let content = block.content
       if (!/^status:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\nstatus: candidate\n')
       if (!/^origin:\s*/mu.test(content)) content = content.replace(/^---\n/u, '---\norigin: research\n')
-      atomicWriteConfinedFile(projectPath, rel, content)
+      if (!createPrivateConfinedFileIfMissing(projectPath, rel, Buffer.from(content))) {
+        warnings.push(`research destination already exists; existing page preserved: ${rel}`)
+        continue
+      }
       written.push(rel)
     } catch (error) {
       signal.throwIfAborted()

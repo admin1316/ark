@@ -154,7 +154,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 These limits define when the provider is expensive or incomplete. They are current package constraints.
 
 - **One search costs a full Messages model turn** — latency plus generated tokens, with up to `maxUses` server-side searches; DeepSeek exposes no dedicated retrieval endpoint.
-- **Dynamic credential availability resolves inside the operation** — the synchronous availability check can establish that a resolver exists but cannot query an asynchronous credential store, so a selected keyless provider fails the search with `WEB_PROVIDER_CREDENTIAL_MISSING`; the stable `web_search` schema stays registered.
+- **Dynamic credential availability is checked locally** — synchronous selection can establish that a resolver exists; `await ctx.web.assertSearchAvailable(signal)` also resolves the local credential and rejects a missing key before a consumer starts paid expansion. Each search resolves its credential again, so later rotation or removal remains authoritative; the stable `web_search` schema stays registered.
 - **Over-returned sources still cost tokens** — with no result-count knob on the wire, `maxResults` is enforced only post-hoc by service truncation.
 - **Uncited results carry no `snippet`** — a source gains one only when a text-block citation (`cited_text`) matches its URL.
 

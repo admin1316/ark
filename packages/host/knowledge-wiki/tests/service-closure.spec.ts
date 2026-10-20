@@ -45,7 +45,7 @@ import { wikiTestConfig } from './config-fixture.ts'
 import { verifierAuthority } from './verifier-authority-fixture.ts'
 
 /** Private service surface exercised by these closure tests. */
-interface ClosureSurface extends Pick<KnowledgeWikiService, 'createProject'> {
+interface ClosureSurface extends Pick<KnowledgeWikiService, 'createProject' | 'setProject' | 'removeProject'> {
   snapshots: { dispose(): void; currentGeneration(root: string): number }
   queue: IngestQueueTask[]
   ingestSource: KnowledgeWikiService['ingestSource']
@@ -524,7 +524,7 @@ describe('ingest admission and ownership', () => {
     const outcome = await service.ingestSource({ ...projectRequest(service), path: '/raw/sources/a.md' })
 
     expect(outcome).toEqual({
-      written: [], warnings: ['ingest task was not admitted'], status: 'error', errorCode: 'invalid-input',
+      written: [], warnings: [expect.stringContaining('stage executor unavailable')], status: 'error', errorCode: 'ingest-failed',
     })
     // The admitted task stays queued under its normalized identity.
     expect((await service.ingestQueueStatus(projectRequest(service))).tasks.map(task => task.input)).toEqual(['a.md'])
@@ -532,25 +532,32 @@ describe('ingest admission and ownership', () => {
     await service.drainQueue()
   })
 
-  it('reports a queued task that a concurrent cancel cleared without an error message', async () => {
+  it('settles pending cancellation before the running task is separately revoked', async () => {
     const observed: AbortSignal[] = []
     ctx.provide('knowledgeWikiStageExecutor', hangingStageExecutor(observed))
-    writeFileSync(join(root, 'raw', 'sources', 'a.md'), 'A', 'utf8')
-    writeFileSync(join(root, 'raw', 'sources', 'b.md'), 'B', 'utf8')
+    const external = tempRoot('wiki-cancel-boundary-')
+    await service.createProject({ name: 'Cancel', path: external })
+    await service.setProject({ path: external })
+    writeFileSync(join(external, 'raw', 'sources', 'a.md'), 'A', 'utf8')
+    writeFileSync(join(external, 'raw', 'sources', 'b.md'), 'B', 'utf8')
 
     const running = service.ingestSource({ ...projectRequest(service), path: 'a.md' })
     expect((await service.ingestQueueStatus(projectRequest(service))).running).toBe(true)
     const queued = service.ingestSource({ ...projectRequest(service), path: 'b.md' })
     await service.ingestQueueCancel(projectRequest(service))
 
-    const [cancelledRunning, cancelledQueued] = await Promise.all([running, queued])
+    const cancelledQueued = await queued
+    expect(observed.every(signal => !signal.aborted)).toBe(true)
+    await service.removeProject({ path: external })
+    const cancelledRunning = await running
     expect(cancelledRunning).toMatchObject({ written: [], status: 'error', errorCode: 'cancelled' })
-    expect(cancelledRunning.warnings).toEqual(['knowledge-wiki ingest cancelled'])
+    expect(cancelledRunning.warnings).toEqual(['knowledge project was unregistered'])
     expect(cancelledQueued).toMatchObject({ written: [], status: 'error', errorCode: 'cancelled' })
     expect(cancelledQueued.warnings).toEqual([expect.stringMatching(/^ingest task \d+ did not complete$/u)])
     expect(observed.length).toBeGreaterThanOrEqual(1)
     expect(observed.every(signal => signal.aborted)).toBe(true)
-    expect((await service.ingestQueueStatus(projectRequest(service))).tasks.map(task => task.status)).toEqual(['cancelled', 'cancelled'])
+    expect(service.queue.filter(task => task.projectRoot === external).map(task => task.status)).toEqual(['cancelled', 'cancelled'])
+    expect(service.queue.find(task => task.projectRoot === external && task.input === 'a.md')?.cancelRequestedAt).toBeUndefined()
   })
 
   it('aborts owned ingest and background summary work when the service fiber is disposed', async () => {

@@ -617,6 +617,22 @@ func runArkDomainAPIContractChecks() {
     "findings": .array([]), "sourceCount": .number(0), "warnings": .array([.string("search unavailable")]),
     "degraded": .bool(true), "errorCode": .string("web-search-unavailable"),
   ]))
+  check((try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object([
+    "researchTimeoutMs": .number(600_000),
+  ]))) == 630, "research transport budget follows the Host total deadline plus bounded delivery grace")
+  check((try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object([
+    "researchTimeoutMs": .number(1),
+  ]))) == 30.001 && (try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object([
+    "researchTimeoutMs": .number(3_600_000),
+  ]))) == 3_630, "research accepts the Host's one-millisecond to one-hour policy bounds")
+  let invalidResearchBudgets: [JSONValue] = [.null, .string("600000"), .bool(true), .number(0), .number(-1),
+    .number(0.5), .number(.infinity), .number(.nan), .number(3_600_001)]
+  for value in invalidResearchBudgets {
+    check((try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object(["researchTimeoutMs": value]))) == nil,
+      "research refuses an invalid, nonfinite, fractional, or unbounded Host deadline")
+  }
+  check((try? ArkDomainAPIContract.knowledgeResearchTimeout(from: .object([:]))) == nil,
+    "research requires its Host deadline instead of guessing a transport fallback")
   check(blockedResearch?.sourceCount == 0 && blockedResearch?.degraded == true
     && blockedResearch?.warnings == ["search unavailable"] && blockedResearch?.errorCode == "web-search-unavailable",
     "native research DTO preserves blocked provenance instead of reducing it to findings")
